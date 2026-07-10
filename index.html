@@ -7,6 +7,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Biyaheng Pantalan">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- iOS Splash Screens -->
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3)" href="splash/splash-1290x2796.png">
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3)" href="splash/splash-1179x2556.png">
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3)" href="splash/splash-1170x2532.png">
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2)" href="splash/splash-750x1334.png">
+<link rel="apple-touch-startup-image" media="(device-width:320px) and (device-height:568px) and (-webkit-device-pixel-ratio:2)" href="splash/splash-640x1136.png">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#083344">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%23083344'/%3E%3Ctext x='90' y='120' font-size='90' text-anchor='middle'%3E⛴️%3C/text%3E%3C/svg%3E">
@@ -281,6 +288,30 @@ textarea#f-paste{
       <button class="btn-delete" id="btnDelete" style="display:none" onclick="deleteTrip()">Delete</button>
       <button class="btn-save" onclick="saveTrip()">Save</button>
     </div>
+  </div>
+</div>
+
+<!-- iOS install banner -->
+<div id="iosBanner" style="display:none;position:fixed;bottom:calc(env(safe-area-inset-bottom)+10px);
+  left:10px;right:10px;background:#1C3358;border:1px solid var(--gold);border-radius:14px;
+  padding:14px 16px;z-index:98;box-shadow:0 4px 24px rgba(0,0,0,.5)">
+  <div style="display:flex;align-items:flex-start;gap:12px">
+    <span style="font-size:28px;flex-shrink:0">⛴️</span>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:3px">Install Biyaheng Pantalan</div>
+      <div style="font-size:12px;color:#9CCADB;line-height:1.4">
+        Tap <strong style="color:#fff">⎋ Share</strong> then
+        <strong style="color:#fff">Add to Home Screen</strong> to install this app on your iPhone.
+        Works offline and opens like a regular app.
+      </div>
+    </div>
+    <button onclick="dismissIOSBanner()" style="background:none;border:none;color:#7FB3C4;
+      font-size:20px;cursor:pointer;padding:0;line-height:1;flex-shrink:0">✕</button>
+  </div>
+  <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+    <div style="flex:1;height:1px;background:rgba(255,255,255,.1)"></div>
+    <span style="font-size:11px;color:#5E93A6">Tap the share icon below ↓</span>
+    <div style="flex:1;height:1px;background:rgba(255,255,255,.1)"></div>
   </div>
 </div>
 
@@ -596,6 +627,22 @@ async function sendNotif(msg){
       _notif: {msg, ts: String(Date.now())}
     });
   } catch(e){ console.warn('notif send failed', e); }
+}
+
+function initIOSBanner(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches;
+  const dismissed = localStorage.getItem('iosBannerDismissed');
+  if (isIOS && !isStandalone && !dismissed){
+    setTimeout(() => {
+      document.getElementById('iosBanner').style.display = 'block';
+    }, 3000); // show after 3s so board loads first
+  }
+}
+function dismissIOSBanner(){
+  document.getElementById('iosBanner').style.display = 'none';
+  localStorage.setItem('iosBannerDismissed', '1');
 }
 
 function isAdmin(){ return localStorage.getItem('bb_mode') === 'admin'; }
@@ -1355,6 +1402,7 @@ applyMode();
 renderDays();
 renderBoard();
 initCloud();
+initIOSBanner();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 setInterval(renderBoard, 60000);
 </script>
