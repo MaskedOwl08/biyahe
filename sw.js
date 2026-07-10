@@ -1,6 +1,4 @@
-// Biyaheng Pantalan service worker — network-first so updates always win,
-// cached copy serves the app when offline.
-const CACHE = 'biyahe-v1';
+const CACHE = 'biyahe-v2';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -13,7 +11,6 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  // Only handle same-origin; let Firebase/CDN requests pass through untouched
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
   e.respondWith(
@@ -23,4 +20,27 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(e.request).then(m => m || caches.match('./index.html')))
   );
+});
+
+/* ---- Push notifications ---- */
+self.addEventListener('push', e => {
+  let msg = 'Biyaheng Pantalan update';
+  try { const d = e.data.json(); msg = d.msg || d.body || msg; } catch {}
+  e.waitUntil(self.registration.showNotification('⛴️ Biyaheng Pantalan', {
+    body: msg,
+    icon: './icon-192.png',
+    badge: './icon-192.png',
+    vibrate: [200, 100, 200],
+    tag: 'biyahe-update',
+    renotify: true,
+    data: { url: self.registration.scope }
+  }));
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(clients.matchAll({type:'window'}).then(list => {
+    for (const c of list) if (c.url.includes('biyahe') && 'focus' in c) return c.focus();
+    return clients.openWindow(e.notification.data.url || './');
+  }));
 });

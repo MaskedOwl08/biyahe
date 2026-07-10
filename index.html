@@ -116,7 +116,7 @@ main{padding:0 14px calc(env(safe-area-inset-bottom) + 90px)}
 .modal-bg.open{display:flex}
 .modal{
   background:var(--foam); color:var(--ink); width:100%;
-  border-radius:18px 18px 0 0; padding:20px 18px calc(env(safe-area-inset-bottom) + 20px);
+  border-radius:18px 18px 0 0; padding:16px 16px calc(env(safe-area-inset-bottom) + 16px);
   max-height:86vh; overflow-y:auto;
 }
 .modal h2{font-size:17px; margin-bottom:4px}
@@ -125,6 +125,10 @@ main{padding:0 14px calc(env(safe-area-inset-bottom) + 90px)}
   display:block; font-size:11px; font-weight:700; letter-spacing:.08em;
   text-transform:uppercase; color:#4A6570; margin:12px 0 4px;
 }
+.modal label{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4A6570;margin:10px 0 4px;display:block}
+.modal .row{gap:8px}
+.modal .row > div{min-width:0}
+.modal input[type=time],.modal input[type=date]{font-size:15px}
 .modal input, .modal select{
   width:100%; padding:11px 12px; font-size:16px; border:1px solid #C3D4D9;
   border-radius:9px; background:#fff;
@@ -133,7 +137,7 @@ main{padding:0 14px calc(env(safe-area-inset-bottom) + 90px)}
 .modal .row > div{flex:1}
 .chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:4px}
 .chips button{
-  padding:8px 12px; border-radius:8px; border:1.5px solid #C3D4D9;
+  padding:10px 14px; border-radius:8px; border:1.5px solid #C3D4D9;
   background:#fff; font-size:13px; font-weight:700; cursor:pointer; color:#4A6570;
 }
 .chips button.on-ontime{border-color:#16A34A; color:#15803D; background:#F0FDF4}
@@ -183,6 +187,12 @@ textarea#f-paste{
 #quickAdd input{
   padding:10px 11px;font-size:15px;border:1px solid var(--line);border-radius:8px;
   background:var(--flip);color:var(--foam);
+}
+@media (max-width: 480px){
+  #quickAdd > div:first-of-type{grid-template-columns:1fr!important}
+  .modal .row{flex-direction:column;gap:6px}
+  .modal .row > div{flex:unset;width:100%}
+  nav button{font-size:12px;padding:8px 2px}
 }
 #quickAdd input::placeholder{color:#5E93A6}
 </style>
@@ -240,20 +250,20 @@ textarea#f-paste{
     <h2 id="tripModalTitle">Add trip</h2>
     <p class="hint">Each trip is for a specific date. Tap a trip on the board anytime to update its status.</p>
     <div class="row">
-      <div><label>Departure time</label><input type="time" id="f-time"></div>
-      <div><label>Vessel name</label><input type="text" id="f-vessel" placeholder="MV Example"></div>
-    </div>
-    <div class="row">
+      <div>    <div class="row">
       <div><label>From</label><input type="text" id="f-from" placeholder="Cuyo"></div>
       <div><label>To</label><input type="text" id="f-to" placeholder="Puerto Princesa"></div>
     </div>
+    <label>Vessel</label><input type="text" id="f-vessel" placeholder="MV Example">
+    <div class="row">
+      <div><label>ETD date</label><input type="date" id="f-date"></div>
+      <div><label>ETD time</label><input type="time" id="f-time"></div>
+    </div></div>
+    </div>
     <div class="row">
       <div><label>Date</label><input type="date" id="f-date"></div>
-      <div><label>ETA (arrival, optional)</label><input type="time" id="f-eta"></div>
-    </div>
-    <div class="row">
+      <div><label>ETA time (optional)</label><input type="time" id="f-eta"></div>
       <div><label>ETA date</label><input type="date" id="f-etadate"></div>
-    </div>
     <label>Status</label>
     <div class="chips" id="f-status">
       <button data-s="ontime">On time</button>
@@ -262,6 +272,10 @@ textarea#f-paste{
     </div>
     <label>Note (optional)</label>
     <input type="text" id="f-note" placeholder="e.g. Moved to 2 PM due to weather">
+    <div class="check" id="notifyRow" style="display:none">
+      <input type="checkbox" id="f-notify" checked>
+      <span>Notify passengers</span>
+    </div>
     <div class="actions">
       <button class="btn-cancel" onclick="closeTrip()">Cancel</button>
       <button class="btn-delete" id="btnDelete" style="display:none" onclick="deleteTrip()">Delete</button>
@@ -269,6 +283,12 @@ textarea#f-paste{
     </div>
   </div>
 </div>
+
+<!-- Toast notification -->
+<div id="toast" style="display:none;position:fixed;top:calc(env(safe-area-inset-top)+14px);left:50%;
+  transform:translateX(-50%);background:var(--navy-2);color:#fff;padding:10px 18px;border-radius:10px;
+  font-size:13px;font-weight:600;z-index:99;max-width:90vw;text-align:center;
+  box-shadow:0 4px 20px rgba(0,0,0,.4);border:1px solid var(--gold)"></div>
 
 <!-- Operators modal (visible to everyone) -->
 <div class="modal-bg" id="sourcesModalBg">
@@ -452,6 +472,103 @@ function cloudSave(){
       updated: Date.now()
     }).catch(e => console.warn('cloud save failed', e));
   }, 400);
+}
+
+/* ======================== WEATHER ======================== */
+const WX_CODES = {
+  0:'☀️ Clear',1:'🌤 Mainly clear',2:'⛅ Partly cloudy',3:'☁️ Overcast',
+  45:'🌫 Foggy',48:'🌫 Icy fog',51:'🌦 Light drizzle',53:'🌦 Drizzle',55:'🌧 Heavy drizzle',
+  61:'🌧 Light rain',63:'🌧 Rain',65:'🌧 Heavy rain',71:'🌨 Light snow',73:'🌨 Snow',
+  80:'🌦 Showers',81:'🌧 Showers',82:'⛈ Heavy showers',95:'⛈ Thunderstorm',99:'⛈ Thunderstorm'
+};
+function degToDir(d){ const dirs=['N','NE','E','SE','S','SW','W','NW']; return dirs[Math.round(d/45)%8]; }
+
+async function initWeather(){
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(async pos => {
+    try {
+      const {latitude:lat, longitude:lon} = pos.coords;
+      const [wx, marine] = await Promise.all([
+        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code&wind_speed_unit=kn&timezone=auto`).then(r=>r.json()),
+        fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=wave_height,swell_wave_height`).then(r=>r.json()).catch(()=>null)
+      ]);
+      const c = wx.current;
+      const wmo = WX_CODES[c.weather_code] || '🌡';
+      const [icon, ...label] = wmo.split(' ');
+      document.getElementById('wx-icon').textContent = icon;
+      document.getElementById('wx-temp').textContent = `${Math.round(c.temperature_2m)}°C`;
+      document.getElementById('wx-wind').textContent = `💨 ${Math.round(c.wind_speed_10m)} kts ${degToDir(c.wind_direction_10m)}`;
+      document.getElementById('wx-label').textContent = label.join(' ');
+      if (marine && marine.current){
+        const wh = marine.current.wave_height;
+        if (wh != null) document.getElementById('wx-wave').textContent = `🌊 ${wh.toFixed(1)}m`;
+      }
+      document.getElementById('weatherStrip').style.display = 'block';
+    } catch(e){ console.warn('weather fetch failed', e); }
+  }, () => {}, {timeout:8000});
+}
+function refreshWeather(){ document.getElementById('weatherStrip').style.display='none'; initWeather(); }
+
+/* ======================== TOAST ======================== */
+let toastTimer;
+function showToast(msg, dur=4000){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.style.display='none', dur);
+}
+
+/* ======================== NOTIFICATIONS ======================== */
+let fcmToken = null, swReg = null;
+
+async function initNotifications(){
+  if (!('Notification' in window)) return;
+  const bell = document.getElementById('bellBtn');
+  if (bell) bell.style.display = 'block';
+  if (Notification.permission === 'granted' && VAPID_KEY) await subscribePush();
+  if (cloudDb){
+    cloudDb.collection('board').doc('main').onSnapshot(snap => {
+      if (!snap.exists) return;
+      const d = snap.data();
+      if (d._notif && d._notif.ts && d._notif.ts !== localStorage.getItem('lastNotif')){
+        localStorage.setItem('lastNotif', d._notif.ts);
+        showToast('📢 ' + d._notif.msg);
+      }
+    }, ()=>{});
+  }
+}
+
+async function requestNotifPermission(){
+  if (!VAPID_KEY){ showToast('Push key not configured yet.'); return; }
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted'){ await subscribePush(); showToast('✅ Notifications enabled!'); }
+  else showToast('Notifications blocked — check browser settings.');
+}
+
+async function subscribePush(){
+  try {
+    if (!swReg) swReg = await navigator.serviceWorker.ready;
+    const sub = await swReg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_KEY)
+    });
+    localStorage.setItem('pushSub', JSON.stringify(sub));
+  } catch(e){ console.warn('push subscribe failed', e); }
+}
+
+function urlBase64ToUint8Array(b64){
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g,'+').replace(/_/g,'/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+async function sendNotif(msg){
+  if (!cloudDb || !isAdmin()) return;
+  try {
+    await cloudDb.collection('board').doc('main').update({
+      _notif: {msg, ts: String(Date.now())}
+    });
+  } catch(e){ console.warn('notif send failed', e); }
 }
 
 function isAdmin(){ return localStorage.getItem('bb_mode') === 'admin'; }
@@ -665,7 +782,11 @@ function openNotice(){
 }
 function closeNotice(){ document.getElementById('noticeModalBg').classList.remove('open'); }
 function saveNotice(){
-  store.notice = document.getElementById('f-notice').value.trim();
+  const noticeVal = document.getElementById('f-notice').value.trim();
+  store.notice = noticeVal;
+  if (isAdmin() && VAPID_KEY && noticeVal && document.getElementById('f-notice-notify') && document.getElementById('f-notice-notify').checked){
+    sendNotif('📢 Advisory: ' + noticeVal);
+  }
   closeNotice(); renderBoard();
 }
 
