@@ -363,6 +363,24 @@ textarea#f-paste{
       <button class="btn-cancel" onclick="closePaste()">Cancel</button>
       <button class="btn-save" onclick="parsePaste()">Detect trips</button>
     </div>
+    <!-- PCG/suspension advisory suggestion -->
+    <div id="parsedAdvisory" style="display:none;margin-top:14px;background:#FBF3DC;
+      border:1px solid #C9A227;border-radius:10px;padding:12px 14px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+        color:#6B5A17;margin-bottom:6px">📢 Suspension / Advisory detected</div>
+      <div id="parsedAdvText" style="font-size:13px;color:#4A3A0A;margin-bottom:8px"></div>
+      <input type="text" id="parsedAdvFull" style="width:100%;padding:9px 11px;font-size:14px;
+        border:1px solid #C9A227;border-radius:8px;background:#fff;margin-bottom:8px"
+        placeholder="Edit advisory text…">
+      <div style="display:flex;gap:8px">
+        <button onclick="applyParsedAdvisory()"
+          style="flex:1;padding:10px;border:0;border-radius:9px;background:#12233F;color:#fff;
+          font-weight:800;font-size:13px;cursor:pointer">Set as advisory banner</button>
+        <button onclick="document.getElementById('parsedAdvisory').style.display='none'"
+          style="padding:10px 14px;border:1px solid #C3D4D9;border-radius:9px;background:#fff;
+          font-size:13px;cursor:pointer">Ignore</button>
+      </div>
+    </div>
     <div id="parsedList"></div>
     <div class="actions" id="parsedActions" style="display:none">
       <button class="btn-save" onclick="addParsed()">Add selected trips</button>
@@ -431,7 +449,16 @@ const store = {
        phone:'09054950825'},
       {name:'JVS Journey Sea Transport Inc.',
        url:'https://www.facebook.com/search/top?q=JVS%20Journey%20Sea%20Transport',
-       phone:'09124289027'}
+       phone:'09124289027'},
+      {name:'PCG Coast Guard District Palawan',
+       url:'https://www.facebook.com/coastguardpalawan',
+       phone:'(048) 433-2114'},
+      {name:'PCG Station Cuyo',
+       url:'https://www.facebook.com/search/top?q=coast+guard+station+cuyo+palawan',
+       phone:''},
+      {name:'PAGASA Palawan (Weather)',
+       url:'https://www.facebook.com/PAGASA.DOST',
+       phone:'(02) 8284-0800'}
     ];
   },
   set sources(v){ localStorage.setItem('bb_sources', JSON.stringify(v)); localStorage.setItem('bb_updated', Date.now()); cloudSave(); }
@@ -901,6 +928,12 @@ function to24(h, m, ap){
   return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
 }
 
+function parsePaste_detectSuspension(text, lines){
+  const suspRe = /(?:pcg|coast\s*guard|pagasa|signal\s*no\.?\s*[\d#]|suspension\s*of|walang\s*biyahe|vessels?\s+\d+\s*gt|small\s*craft|advised\s*not\s*to\s*sail|tropical\s*(storm|depression|cyclone)|typhoon|habagat)/i;
+  if (!suspRe.test(text)) return null;
+  return lines.find(l => suspRe.test(l) && l.length > 10) || lines[0];
+}
+
 const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
 function parseDateLine(l){
   // "JULY 8", "July 8, 2026", "Jul. 8", "7/8", "07/08/2026"
@@ -1013,6 +1046,17 @@ function parsePaste(){
   // FB posts often break "2:00" and "pm ETD ..." across lines — rejoin them
   text = text.replace(/(\d)\s*\n\s*(am|pm|a\.m\.|p\.m\.|nn|mn|h)\b/gi, '$1 $2');
   const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+
+  // PCG/PAGASA suspension advisory detection
+  const advLine = parsePaste_detectSuspension(text, lines);
+  const parsedAdv = document.getElementById('parsedAdvisory');
+  if (advLine && parsedAdv){
+    document.getElementById('parsedAdvText').textContent = advLine;
+    document.getElementById('parsedAdvFull').value = advLine;
+    parsedAdv.style.display = 'block';
+  } else if (parsedAdv){
+    parsedAdv.style.display = 'none';
+  }
 
   // Post-wide fallbacks
   const cleanVessel = v => v.replace(/\b(trip|schedule|advisory|notice|update|departure)s?\b.*$/i,'').trim();
