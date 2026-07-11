@@ -184,7 +184,7 @@ textarea{ min-height:70px; resize:vertical; }
     <h2>📋 All trips</h2>
     <table>
       <thead>
-        <tr><th>Date</th><th>Time</th><th>Route</th><th>Vessel</th><th>Status</th><th>Note</th><th></th></tr>
+        <tr><th>Date</th><th>Time</th><th>Route</th><th>Vessel</th><th>Status</th><th>Note</th><th>Location</th><th></th></tr>
       </thead>
       <tbody id="tripsBody"></tbody>
     </table>
@@ -302,7 +302,7 @@ function saveBoard(){
 function renderTrips(){
   const body = document.getElementById('tripsBody');
   if (!trips.length){
-    body.innerHTML = '<tr class="empty-row"><td colspan="7">No trips yet. Add one above.</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="8">No trips yet. Add one above.</td></tr>';
     return;
   }
   const sorted = [...trips].sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
@@ -320,11 +320,29 @@ function renderTrips(){
         </select>
       </td>
       <td>${esc(t.note || '')}</td>
+      <td>${locationCell(t)}</td>
       <td class="row-actions">
         <button onclick="editTrip('${t.id}')">Edit</button>
         <button class="danger" onclick="deleteTrip('${t.id}')">Delete</button>
       </td>
     </tr>`).join('');
+}
+
+function locationCell(t){
+  if (t.liveLat == null || t.liveLng == null) return '<span style="color:#5E93A6;font-size:12px">—</span>';
+  const mapUrl = `https://www.google.com/maps?q=${t.liveLat},${t.liveLng}`;
+  const ago = t.liveUpdatedAt ? timeAgo(t.liveUpdatedAt) : '';
+  return `<a href="${mapUrl}" target="_blank" style="color:var(--amber);font-size:12px">📍 View</a>
+          <div style="font-size:10.5px;color:#7FB3C4;margin-top:2px">${ago}</div>`;
+}
+
+function timeAgo(ts){
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' min ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + ' hr ago';
+  return Math.round(hrs / 24) + ' day(s) ago';
 }
 
 function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
