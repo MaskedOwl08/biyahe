@@ -128,7 +128,7 @@ textarea{ min-height:70px; resize:vertical; }
 
 <main>
   <div class="panel">
-    <h2>➕ Add trip</h2>
+    <h2 id="tripPanelTitle">➕ Add trip</h2>
     <div class="grid-form">
       <div><label>Date</label><input type="date" id="a-date"></div>
       <div><label>From</label><input type="text" id="a-from" placeholder="Cuyo"></div>
@@ -136,12 +136,17 @@ textarea{ min-height:70px; resize:vertical; }
       <div><label>Vessel</label><input type="text" id="a-vessel" placeholder="MV Example"></div>
       <div><label>ETD</label><input type="time" id="a-etd"></div>
       <div><label>ETA (optional)</label><input type="time" id="a-eta"></div>
-      <button onclick="addTrip()">Add trip</button>
+      <button id="tripSaveBtn" onclick="addTrip()">Add trip</button>
+    </div>
+    <div style="margin-top:8px">
+      <label style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#7FB3C4;display:block;margin-bottom:4px">Note (optional)</label>
+      <input type="text" id="a-note" class="wide" placeholder="e.g. Moved to 2 PM due to weather">
     </div>
     <label class="check" style="margin-top:12px">
       <input type="checkbox" id="a-trip-notify">
       🔔 Also send push notification for this trip
     </label>
+    <button id="tripCancelBtn" class="btn-clear" style="display:none;margin-top:10px" onclick="cancelEditTrip()">Cancel edit</button>
   </div>
 
   <div class="panel">
@@ -316,12 +321,15 @@ function renderTrips(){
       </td>
       <td>${esc(t.note || '')}</td>
       <td class="row-actions">
+        <button onclick="editTrip('${t.id}')">Edit</button>
         <button class="danger" onclick="deleteTrip('${t.id}')">Delete</button>
       </td>
     </tr>`).join('');
 }
 
 function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+let editingTripId = null;
 
 function addTrip(){
   const date = document.getElementById('a-date').value;
@@ -330,12 +338,27 @@ function addTrip(){
   const vessel = document.getElementById('a-vessel').value.trim();
   const time = document.getElementById('a-etd').value;
   const eta = document.getElementById('a-eta').value;
+  const note = document.getElementById('a-note').value.trim();
   if (!date || !from || !to || !vessel || !time){
     showToast('Need date, from, to, vessel, and ETD.');
     return;
   }
+
+  if (editingTripId){
+    const t = trips.find(x => x.id === editingTripId);
+    if (t) Object.assign(t, { date, from, to, vessel, time, eta, note });
+    saveBoard();
+    if (document.getElementById('a-trip-notify').checked){
+      const msg = `Updated trip: ${vessel} — ${from} → ${to}, ${fmtDateShort(date)} ${fmtTime(time)}`;
+      pushMessage(msg);
+    }
+    showToast('Trip updated ✓');
+    cancelEditTrip();
+    return;
+  }
+
   trips.push({
-    id: 't' + Date.now(), date, time, eta, vessel, from, to, note:'', status:'ontime'
+    id: 't' + Date.now(), date, time, eta, vessel, from, to, note, status:'ontime'
   });
   saveBoard();
   if (document.getElementById('a-trip-notify').checked){
@@ -345,6 +368,7 @@ function addTrip(){
   document.getElementById('a-vessel').value = '';
   document.getElementById('a-etd').value = '';
   document.getElementById('a-eta').value = '';
+  document.getElementById('a-note').value = '';
   document.getElementById('a-trip-notify').checked = false;
   showToast('Trip added ✓');
 }
@@ -362,6 +386,39 @@ function deleteTrip(id){
   trips = trips.filter(x => x.id !== id);
   saveBoard();
   showToast('Trip deleted');
+  if (editingTripId === id) cancelEditTrip();
+}
+
+function editTrip(id){
+  const t = trips.find(x => x.id === id);
+  if (!t) return;
+  editingTripId = id;
+  document.getElementById('a-date').value = t.date;
+  document.getElementById('a-from').value = t.from;
+  document.getElementById('a-to').value = t.to;
+  document.getElementById('a-vessel').value = t.vessel;
+  document.getElementById('a-etd').value = t.time;
+  document.getElementById('a-eta').value = t.eta || '';
+  document.getElementById('a-note').value = t.note || '';
+  document.getElementById('tripPanelTitle').textContent = '✏️ Edit trip';
+  document.getElementById('tripSaveBtn').textContent = 'Save changes';
+  document.getElementById('tripCancelBtn').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function cancelEditTrip(){
+  editingTripId = null;
+  document.getElementById('a-date').value = '';
+  document.getElementById('a-from').value = '';
+  document.getElementById('a-to').value = '';
+  document.getElementById('a-vessel').value = '';
+  document.getElementById('a-etd').value = '';
+  document.getElementById('a-eta').value = '';
+  document.getElementById('a-note').value = '';
+  document.getElementById('a-trip-notify').checked = false;
+  document.getElementById('tripPanelTitle').textContent = '➕ Add trip';
+  document.getElementById('tripSaveBtn').textContent = 'Add trip';
+  document.getElementById('tripCancelBtn').style.display = 'none';
 }
 
 /* ============ ADVISORY ============ */
