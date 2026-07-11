@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Weather Map - Biyaheng Pantalan</title>
+<style>
+  :root{
+    --deep:#083344; --board:#0B4258; --foam:#EAF6F6;
+    --amber:#FFB454; --line:#1B5A72;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:var(--deep); color:var(--foam); min-height:100vh;
+    display:flex; flex-direction:column;
+  }
+  header{
+    display:flex; align-items:center; gap:12px;
+    padding:calc(env(safe-area-inset-top) + 14px) 16px 12px;
+    background:var(--board); border-bottom:1px solid var(--line);
+  }
+  header a{
+    color:var(--amber); text-decoration:none; font-size:15px; font-weight:700;
+  }
+  header h1{font-size:17px; font-weight:800}
+  .map-wrap{flex:1; position:relative; min-height:0}
+  iframe{width:100%; height:100%; border:0; display:block}
+  .note{
+    font-size:12px; color:#8FBECF; text-align:center;
+    padding:10px 14px calc(env(safe-area-inset-bottom) + 10px);
+    background:var(--board);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="index.html">&larr; Back</a>
+  <h1>🗺️ Weather Map</h1>
+</header>
+
+<div class="map-wrap">
+  <iframe
+    src="https://embed.windy.com/embed2.html?lat=10.85&lon=121.02&detailLat=10.85&detailLon=121.02&width=650&height=450&zoom=8&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1"
+    frameborder="0" loading="lazy">
+  </iframe>
+</div>
+
+<div class="note">
+  Tap the layers icon on the map to switch between wind, rain, waves, and clouds.
+</div>
+
+</body>
+</html>
