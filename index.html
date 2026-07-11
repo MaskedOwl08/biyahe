@@ -18,6 +18,19 @@
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9813863553993206"
      crossorigin="anonymous"></script>
 <link rel="manifest" href="manifest.json">
+<!-- OneSignal Push Notifications -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "f89335c0-f26a-4c75-90e2-a562d6b56ccf",
+      notifyButton: { enable: false }, // we use our own 🔔 button instead
+      allowLocalhostAsSecureOrigin: true
+    });
+    window.__oneSignalReady = true;
+  });
+</script>
 <meta name="theme-color" content="#083344">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%23083344'/%3E%3Ctext x='90' y='120' font-size='90' text-anchor='middle'%3E⛴️%3C/text%3E%3C/svg%3E">
 <style>
@@ -234,8 +247,13 @@ textarea#f-paste{
 <body>
 
 <header>
-  <h1 onclick="toggleAdmin()" style="cursor:pointer">⛴️ Biyaheng <span>Pantalan</span> <small id="modeBadge" style="font-size:10px;vertical-align:middle;letter-spacing:.1em;color:#7FB3C4"></small></h1>
-  <div class="clock" id="clock"></div>
+  <h1>⛴️ Biyaheng <span>Pantalan</span></h1>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button id="bellBtn" onclick="requestNotifPermission()" title="Get notified of advisories"
+      style="background:none;border:1px solid var(--line);border-radius:8px;color:#9CCADB;
+      font-size:15px;padding:6px 9px;cursor:pointer;line-height:1">🔔</button>
+    <div class="clock" id="clock"></div>
+  </div>
 </header>
 
 <div class="day-strip" id="dayStrip"></div>
@@ -261,39 +279,32 @@ textarea#f-paste{
   </div>
 </div>
 
-<!-- AdMob banner — Bottom Banner unit -->
-<div id="adBanner" style="padding:4px 14px 8px;text-align:center;min-height:60px">
+<!-- Web-only ad banner (AdSense). Hidden inside the Play Store app wrapper —
+     AdSense policy prohibits AdSense units inside packaged apps; TWA installs
+     are detected via document.referrer starting with "android-app://". -->
+<div id="adBanner" style="padding:0 14px;text-align:center">
   <ins class="adsbygoogle"
      style="display:block;width:100%;max-height:100px"
      data-ad-client="ca-pub-9813863553993206"
      data-ad-slot="3201894317"
      data-ad-format="horizontal"
      data-full-width-responsive="true"></ins>
-  <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
 </div>
+<script>
+  // Only request/render the ad when NOT running inside the Play Store TWA wrapper.
+  if (!(document.referrer || '').startsWith('android-app://')) {
+    (adsbygoogle = window.adsbygoogle || []).push({});
+  } else {
+    const el = document.getElementById('adBanner');
+    if (el) el.style.display = 'none';
+  }
+</script>
 <main>
   <div class="notice" id="notice"></div>
   <input type="search" id="routeFilter" placeholder="🔍 Filter by port or vessel (e.g. Cuyo, Iloilo, Batangas)"
     oninput="renderBoard()"
     style="width:100%;padding:11px 14px;font-size:15px;border:1px solid var(--line);
     border-radius:10px;background:var(--board);color:var(--foam);margin-bottom:12px">
-  <div id="quickAdd" style="display:none;background:var(--board);border:1px solid var(--gold-soft);border-radius:12px;padding:12px;margin-bottom:12px">
-    <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-soft);font-weight:700;margin-bottom:8px">⚡ Quick add (NOA style)</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
-      <input id="q-vessel" type="text" placeholder="Vessel" style="grid-column:1/-1">
-      <input id="q-from" type="text" placeholder="From">
-      <input id="q-to" type="text" placeholder="To">
-      <input id="q-date" type="date">
-      <div style="display:flex;gap:7px">
-        <input id="q-etd" type="time" title="ETD" style="flex:1">
-        <input id="q-eta" type="time" title="ETA" style="flex:1">
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-      <small style="color:#7FB3C4;flex:1">ETD → ETA</small>
-      <button onclick="quickAdd()" style="padding:10px 22px;border:0;border-radius:8px;background:var(--gold);color:var(--deep);font-weight:800;font-size:14px;cursor:pointer">Add ⏎</button>
-    </div>
-  </div>
   <div class="board">
     <div class="board-head"><span>Time</span><span>Route · Vessel</span><span style="text-align:right">Status</span></div>
     <div id="tripList"></div>
@@ -302,51 +313,8 @@ textarea#f-paste{
 </main>
 
 <div class="bar">
-  <button onclick="openNotice()">📢</button>
-  <button onclick="openSources()">☎️ Boats</button>
-  <button onclick="shareData()">↗︎ Share</button>
-  <button onclick="openPaste()">📋 Paste</button>
-  <button class="primary" onclick="openTrip()">＋ Add</button>
-</div>
-
-<!-- Trip modal -->
-<div class="modal-bg" id="tripModalBg">
-  <div class="modal">
-    <h2 id="tripModalTitle">Add trip</h2>
-    <p class="hint">Each trip is for a specific date. Tap a trip on the board anytime to update its status.</p>
-    <div class="row">
-      <div>    <div class="row">
-      <div><label>From</label><input type="text" id="f-from" placeholder="Cuyo"></div>
-      <div><label>To</label><input type="text" id="f-to" placeholder="Puerto Princesa"></div>
-    </div>
-    <label>Vessel</label><input type="text" id="f-vessel" placeholder="MV Example">
-    <div class="row">
-      <div><label>ETD date</label><input type="date" id="f-date"></div>
-      <div><label>ETD time</label><input type="time" id="f-time"></div>
-    </div></div>
-    </div>
-    <div class="row">
-      <div><label>Date</label><input type="date" id="f-date"></div>
-      <div><label>ETA time (optional)</label><input type="time" id="f-eta"></div>
-      <div><label>ETA date</label><input type="date" id="f-etadate"></div>
-    <label>Status</label>
-    <div class="chips" id="f-status">
-      <button data-s="ontime">On time</button>
-      <button data-s="delayed">Delayed</button>
-      <button data-s="cancelled">Cancelled</button>
-    </div>
-    <label>Note (optional)</label>
-    <input type="text" id="f-note" placeholder="e.g. Moved to 2 PM due to weather">
-    <div class="check" id="notifyRow" style="display:none">
-      <input type="checkbox" id="f-notify" checked>
-      <span>Notify passengers</span>
-    </div>
-    <div class="actions">
-      <button class="btn-cancel" onclick="closeTrip()">Cancel</button>
-      <button class="btn-delete" id="btnDelete" style="display:none" onclick="deleteTrip()">Delete</button>
-      <button class="btn-save" onclick="saveTrip()">Save</button>
-    </div>
-  </div>
+  <button onclick="openSources()">☎️ Boat operators</button>
+  <button class="primary" onclick="shareData()">↗︎ Share board</button>
 </div>
 
 <!-- iOS install banner -->
@@ -385,19 +353,6 @@ textarea#f-paste{
     <h2>Boat operators</h2>
     <p class="hint">Check their Facebook pages for official announcements, or call to confirm a trip.</p>
     <div id="sourcesList"></div>
-    <div id="sourcesAdmin" style="display:none">
-      <label style="margin-top:16px">Add a source (admin)</label>
-      <div class="row" style="margin-top:4px">
-        <div><input type="text" id="src-name" placeholder="Operator name"></div>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <div><input type="text" id="src-url" placeholder="FB page link"></div>
-        <div style="flex:0 0 130px"><input type="tel" id="src-phone" placeholder="Phone"></div>
-      </div>
-      <div class="share-row" style="margin-top:8px">
-        <button onclick="addSource()">＋ Add source</button>
-      </div>
-    </div>
     <div class="actions">
       <button class="btn-cancel" onclick="closeSources()">Close</button>
     </div>
@@ -417,62 +372,15 @@ textarea#f-paste{
   </div>
 </div>
 
-<!-- Advisory modal -->
-<div class="modal-bg" id="noticeModalBg">
-  <div class="modal">
-    <h2>Port advisory</h2>
-    <p class="hint">Shows as a banner above the board. Leave blank to clear.</p>
-    <input type="text" id="f-notice" placeholder="e.g. Signal No. 1 — all small craft trips suspended">
+<!-- Advisory popup (auto-shown on new advisory) -->
+<div class="modal-bg" id="advisoryPopupBg" style="z-index:20">
+  <div class="modal" style="text-align:center">
+    <div style="font-size:44px;margin-bottom:6px">📢</div>
+    <h2 style="margin-bottom:10px">Port Advisory</h2>
+    <p id="advisoryPopupText" style="font-size:15px;line-height:1.6;color:var(--ink);text-align:left;
+      background:#FBF3DC;border:1px solid #C9A227;border-radius:10px;padding:12px 14px;margin-bottom:16px"></p>
     <div class="actions">
-      <button class="btn-cancel" onclick="closeNotice()">Cancel</button>
-      <button class="btn-save" onclick="saveNotice()">Save</button>
-    </div>
-    <label style="margin-top:20px">Transfer schedules</label>
-    <p class="hint">Export a file to share this board; import to load someone else's.</p>
-    <div class="share-row">
-      <button onclick="exportJson()">Export file</button>
-      <button onclick="document.getElementById('importFile').click()">Import file</button>
-    </div>
-    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJson(event)">
-  </div>
-</div>
-
-<!-- Paste FB post modal -->
-<div class="modal-bg" id="pasteModalBg">
-  <div class="modal">
-    <h2>Paste a schedule post</h2>
-    <p class="hint">Copy the announcement from Facebook and paste it here. Times and vessel names are detected automatically — review before adding.</p>
-    <textarea id="f-paste" placeholder="e.g.&#10;TRIP SCHEDULE&#10;MV Milagrosa — Cuyo to Iloilo&#10;Departure: 8:00 PM&#10;..."></textarea>
-    <div class="share-row" style="margin-top:10px">
-      <button onclick="document.getElementById('ocrFile').click()">📷 Read from photo</button>
-    </div>
-    <input type="file" id="ocrFile" accept="image/*" style="display:none" onchange="ocrPhoto(event)">
-    <p class="hint" id="ocrStatus" style="display:none; margin-top:8px"></p>
-    <div class="actions">
-      <button class="btn-cancel" onclick="closePaste()">Cancel</button>
-      <button class="btn-save" onclick="parsePaste()">Detect trips</button>
-    </div>
-    <!-- PCG/suspension advisory suggestion -->
-    <div id="parsedAdvisory" style="display:none;margin-top:14px;background:#FBF3DC;
-      border:1px solid #C9A227;border-radius:10px;padding:12px 14px">
-      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
-        color:#6B5A17;margin-bottom:6px">📢 Suspension / Advisory detected</div>
-      <div id="parsedAdvText" style="font-size:13px;color:#4A3A0A;margin-bottom:8px"></div>
-      <input type="text" id="parsedAdvFull" style="width:100%;padding:9px 11px;font-size:14px;
-        border:1px solid #C9A227;border-radius:8px;background:#fff;margin-bottom:8px"
-        placeholder="Edit advisory text…">
-      <div style="display:flex;gap:8px">
-        <button onclick="applyParsedAdvisory()"
-          style="flex:1;padding:10px;border:0;border-radius:9px;background:#12233F;color:#fff;
-          font-weight:800;font-size:13px;cursor:pointer">Set as advisory banner</button>
-        <button onclick="document.getElementById('parsedAdvisory').style.display='none'"
-          style="padding:10px 14px;border:1px solid #C3D4D9;border-radius:9px;background:#fff;
-          font-size:13px;cursor:pointer">Ignore</button>
-      </div>
-    </div>
-    <div id="parsedList"></div>
-    <div class="actions" id="parsedActions" style="display:none">
-      <button class="btn-save" onclick="addParsed()">Add selected trips</button>
+      <button class="btn-save" style="width:100%" onclick="closeAdvisoryPopup()">Got it</button>
     </div>
   </div>
 </div>
@@ -494,6 +402,11 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "422252815402",
   appId: "1:422252815402:web:3aa2ad15743a4b71020f53"
 };
+
+/* Push notifications: advisory pushes are sent through a Cloudflare Worker
+   (biyahe-push.roiaballa7.workers.dev) which holds the OneSignal REST key
+   server-side, so it never appears in this public repo. Pushes are sent
+   from admin.html, not from this passenger-facing file. */
 
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const iso = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -572,6 +485,7 @@ async function initCloud(){
       localStorage.setItem('bb_updated', d.updated || Date.now());
       applyingRemote = false;
       renderDays(); renderBoard();
+      checkAdvisoryPopup();
     }, err => console.warn('cloud read error', err));
     document.getElementById('modeBadge').textContent += ' ⚡';
   } catch(e){ console.warn('cloud init failed, running offline', e); }
@@ -590,40 +504,6 @@ function cloudSave(){
   }, 400);
 }
 
-/* ======================== WEATHER ======================== */
-const WX_CODES = {
-  0:'☀️ Clear',1:'🌤 Mainly clear',2:'⛅ Partly cloudy',3:'☁️ Overcast',
-  45:'🌫 Foggy',48:'🌫 Icy fog',51:'🌦 Light drizzle',53:'🌦 Drizzle',55:'🌧 Heavy drizzle',
-  61:'🌧 Light rain',63:'🌧 Rain',65:'🌧 Heavy rain',71:'🌨 Light snow',73:'🌨 Snow',
-  80:'🌦 Showers',81:'🌧 Showers',82:'⛈ Heavy showers',95:'⛈ Thunderstorm',99:'⛈ Thunderstorm'
-};
-function degToDir(d){ const dirs=['N','NE','E','SE','S','SW','W','NW']; return dirs[Math.round(d/45)%8]; }
-
-async function initWeather(){
-  if (!navigator.geolocation) return;
-  navigator.geolocation.getCurrentPosition(async pos => {
-    try {
-      const {latitude:lat, longitude:lon} = pos.coords;
-      const [wx, marine] = await Promise.all([
-        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code&wind_speed_unit=kn&timezone=auto`).then(r=>r.json()),
-        fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=wave_height,swell_wave_height`).then(r=>r.json()).catch(()=>null)
-      ]);
-      const c = wx.current;
-      const wmo = WX_CODES[c.weather_code] || '🌡';
-      const [icon, ...label] = wmo.split(' ');
-      document.getElementById('wx-icon').textContent = icon;
-      document.getElementById('wx-temp').textContent = `${Math.round(c.temperature_2m)}°C`;
-      document.getElementById('wx-wind').textContent = `💨 ${Math.round(c.wind_speed_10m)} kts ${degToDir(c.wind_direction_10m)}`;
-      document.getElementById('wx-label').textContent = label.join(' ');
-      if (marine && marine.current){
-        const wh = marine.current.wave_height;
-        if (wh != null) document.getElementById('wx-wave').textContent = `🌊 ${wh.toFixed(1)}m`;
-      }
-      document.getElementById('weatherStrip').style.display = 'block';
-    } catch(e){ console.warn('weather fetch failed', e); }
-  }, () => {}, {timeout:8000});
-}
-function refreshWeather(){ document.getElementById('weatherStrip').style.display='none'; initWeather(); }
 
 /* ======================== TOAST ======================== */
 let toastTimer;
@@ -634,57 +514,34 @@ function showToast(msg, dur=4000){
   toastTimer = setTimeout(() => el.style.display='none', dur);
 }
 
-/* ======================== NOTIFICATIONS ======================== */
-let fcmToken = null, swReg = null;
-
-async function initNotifications(){
-  if (!('Notification' in window)) return;
-  const bell = document.getElementById('bellBtn');
-  if (bell) bell.style.display = 'block';
-  if (Notification.permission === 'granted' && VAPID_KEY) await subscribePush();
-  if (cloudDb){
-    cloudDb.collection('board').doc('main').onSnapshot(snap => {
-      if (!snap.exists) return;
-      const d = snap.data();
-      if (d._notif && d._notif.ts && d._notif.ts !== localStorage.getItem('lastNotif')){
-        localStorage.setItem('lastNotif', d._notif.ts);
-        showToast('📢 ' + d._notif.msg);
-      }
-    }, ()=>{});
-  }
-}
-
+/* ======================== NOTIFICATIONS (OneSignal) ======================== */
 async function requestNotifPermission(){
-  if (!VAPID_KEY){ showToast('Push key not configured yet.'); return; }
-  const perm = await Notification.requestPermission();
-  if (perm === 'granted'){ await subscribePush(); showToast('✅ Notifications enabled!'); }
-  else showToast('Notifications blocked — check browser settings.');
-}
-
-async function subscribePush(){
+  if (!window.OneSignal){ showToast('Notifications still loading — try again in a moment.'); return; }
   try {
-    if (!swReg) swReg = await navigator.serviceWorker.ready;
-    const sub = await swReg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_KEY)
-    });
-    localStorage.setItem('pushSub', JSON.stringify(sub));
-  } catch(e){ console.warn('push subscribe failed', e); }
+    const OneSignal = window.OneSignal;
+    const already = await OneSignal.Notifications.permission;
+    if (already){ showToast('🔔 Notifications already enabled!'); updateBellState(true); return; }
+    await OneSignal.Notifications.requestPermission();
+    const granted = await OneSignal.Notifications.permission;
+    if (granted){ showToast('✅ Notifications enabled!'); updateBellState(true); }
+    else showToast('Notifications blocked — check browser/site settings.');
+  } catch(e){ console.warn('notif permission failed', e); showToast('Could not enable notifications.'); }
 }
 
-function urlBase64ToUint8Array(b64){
-  const pad = '='.repeat((4 - b64.length % 4) % 4);
-  const raw = atob((b64 + pad).replace(/-/g,'+').replace(/_/g,'/'));
-  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+function updateBellState(on){
+  const bell = document.getElementById('bellBtn');
+  if (!bell) return;
+  bell.textContent = on ? '🔔' : '🔔';
+  bell.style.opacity = on ? '1' : '.6';
+  bell.title = on ? 'Notifications on' : 'Get notified of advisories';
 }
 
-async function sendNotif(msg){
-  if (!cloudDb || !isAdmin()) return;
+async function initNotifState(){
+  if (!window.OneSignal) return;
   try {
-    await cloudDb.collection('board').doc('main').update({
-      _notif: {msg, ts: String(Date.now())}
-    });
-  } catch(e){ console.warn('notif send failed', e); }
+    const on = await window.OneSignal.Notifications.permission;
+    updateBellState(!!on);
+  } catch(e){}
 }
 
 function initIOSBanner(){
@@ -703,40 +560,8 @@ function dismissIOSBanner(){
   localStorage.setItem('iosBannerDismissed', '1');
 }
 
-function isAdmin(){ return localStorage.getItem('bb_mode') === 'admin'; }
-function toggleAdmin(){
-  let pin = localStorage.getItem('bb_pin');
-  if (!pin){
-    const p = prompt('Create an admin PIN (numbers only). Keep it private — anyone with it can edit the board.');
-    if (!p) return;
-    localStorage.setItem('bb_pin', p);
-    localStorage.setItem('bb_mode', 'admin');
-  } else if (isAdmin()){
-    localStorage.setItem('bb_mode', 'client');
-  } else {
-    const p = prompt('Enter admin PIN');
-    if (p !== pin){ if (p !== null) alert('Wrong PIN'); return; }
-    localStorage.setItem('bb_mode', 'admin');
-  }
-  applyMode(); renderBoard();
-}
-function applyMode(){
-  const admin = isAdmin();
-  document.getElementById('modeBadge').textContent = admin ? 'ADMIN' : '';
-  document.getElementById('quickAdd').style.display = admin ? 'block' : 'none';
-  const qa = document.getElementById('quickAdd');
-  qa.style.display = admin ? 'block' : 'none';
-  if (admin && !document.getElementById('q-date').value)
-    document.getElementById('q-date').value = viewDate;
-  document.querySelectorAll('.bar button').forEach(b => {
-    // Share and Boats are for everyone; the rest are admin tools
-    if (b.textContent.includes('Share') || b.textContent.includes('Boats')) return;
-    b.style.display = admin ? '' : 'none';
-  });
-}
 
 let viewDate = iso(new Date());
-let editingId = null;
 function dateStrip(){
   // yesterday + today + next 8 days
   const out = [];
@@ -813,14 +638,14 @@ function renderBoard(){
   const trips = rows;
   if (!trips.length){
     const d = new Date(viewDate + 'T00:00');
-    list.innerHTML = `<div class="empty">No trips listed for ${DAYS[d.getDay()]}, ${d.toLocaleDateString('en-PH',{month:'long',day:'numeric'})}.<br>Tap <b>＋ Add</b> or <b>📋 Paste</b> a schedule post.</div>`;
+    list.innerHTML = `<div class="empty">No trips listed for ${DAYS[d.getDay()]}, ${d.toLocaleDateString('en-PH',{month:'long',day:'numeric'})}.</div>`;
   } else {
     list.innerHTML = trips.map(r => {
       const t = r.t;
       const isEta = r.kind === 'ETA';
       const s = isEta ? (t.status === 'cancelled' ? 'cancelled' : 'ontime') : statusOf(t);
       const badge = isEta ? ('ETA · Arrival' + (t.etaEst ? ' (est.)' : '')) : 'ETD · Departure';
-      const open = isAdmin() ? `openTrip('${t.id}')` : `openClient('${t.id}')`;
+      const open = `openClient('${t.id}')`;
       return `<div class="trip tap" onclick="${open}">
         <div class="time">${fmtTime(r.at)}</div>
         <div class="route"><b>${esc(t.from)} → ${esc(t.to)}</b>
@@ -840,91 +665,10 @@ function renderBoard(){
 }
 function esc(s){ const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
-/* Trip modal */
-let pickedStatus = 'ontime';
 
-function renderStatusPick(){
-  document.querySelectorAll('#f-status button').forEach(b => {
-    b.className = b.dataset.s === pickedStatus ? 'on-' + pickedStatus : '';
-  });
-}
-document.querySelectorAll('#f-status button').forEach(b => {
-  b.onclick = () => { pickedStatus = b.dataset.s; renderStatusPick(); };
-});
-
-function openTrip(id){
-  editingId = id || null;
-  const t = id ? store.trips.find(x => x.id === id) : null;
-  document.getElementById('tripModalTitle').textContent = t ? 'Update trip' : 'Add trip';
-  document.getElementById('btnDelete').style.display = t ? 'block' : 'none';
-  document.getElementById('f-time').value = t ? t.time : '';
-  document.getElementById('f-vessel').value = t ? t.vessel : '';
-  document.getElementById('f-from').value = t ? t.from : '';
-  document.getElementById('f-to').value = t ? t.to : '';
-  document.getElementById('f-note').value = t ? (t.note || '') : '';
-  document.getElementById('f-date').value = t ? t.date : viewDate;
-  document.getElementById('f-eta').value = t ? (t.eta || '') : '';
-  document.getElementById('f-etadate').value = t ? (t.etaDate || t.date || '') : '';
-  pickedStatus = t ? (t.status === 'departed' ? 'ontime' : t.status) : 'ontime';
-  renderStatusPick();
-  document.getElementById('tripModalBg').classList.add('open');
-}
-function closeTrip(){ document.getElementById('tripModalBg').classList.remove('open'); }
-
-function saveTrip(){
-  const date = document.getElementById('f-date').value;
-  const eta = document.getElementById('f-eta').value;
-  let etaDate = document.getElementById('f-etadate').value;
-  const time = document.getElementById('f-time').value;
-  const vessel = document.getElementById('f-vessel').value.trim();
-  const from = document.getElementById('f-from').value.trim();
-  const to = document.getElementById('f-to').value.trim();
-  const note = document.getElementById('f-note').value.trim();
-  if (!date || !time || !vessel || !from || !to){
-    alert('Fill in date, time, vessel, and route.');
-    return;
-  }
-  const trips = store.trips;
-  if (editingId){
-    const t = trips.find(x => x.id === editingId);
-    if (eta && !etaDate) etaDate = (eta < time) ? nextDay(date) : date;
-    let etaE = eta, etaEst = false;
-    if (!etaE){ const est = estimateEta(date, time, from, to); if (est){ etaE = est.eta; etaDate = est.etaDate; etaEst = true; } }
-    Object.assign(t, {date, time, vessel, from, to, note, eta:etaE, etaDate, etaEst, status:pickedStatus});
-  } else {
-    if (eta && !etaDate) etaDate = (eta < time) ? nextDay(date) : date;
-    let etaE = eta, etaEst = false;
-    if (!etaE){ const est = estimateEta(date, time, from, to); if (est){ etaE = est.eta; etaDate = est.etaDate; etaEst = true; } }
-    trips.push({id:'t' + Date.now(), date, time, vessel, from, to, note, eta:etaE, etaDate, etaEst, status:pickedStatus});
-  }
-  store.trips = trips;
-  if (date !== viewDate){ viewDate = date; renderDays(); }
-  closeTrip(); renderBoard();
-}
-function deleteTrip(){
-  if (!confirm('Delete this trip from the board?')) return;
-  store.trips = store.trips.filter(x => x.id !== editingId);
-  closeTrip(); renderBoard();
-}
-
-/* Advisory + transfer */
-function openNotice(){
-  document.getElementById('f-notice').value = store.notice;
-  document.getElementById('noticeModalBg').classList.add('open');
-}
-function closeNotice(){ document.getElementById('noticeModalBg').classList.remove('open'); }
-function saveNotice(){
-  const noticeVal = document.getElementById('f-notice').value.trim();
-  store.notice = noticeVal;
-  if (isAdmin() && VAPID_KEY && noticeVal && document.getElementById('f-notice-notify') && document.getElementById('f-notice-notify').checked){
-    sendNotif('📢 Advisory: ' + noticeVal);
-  }
-  closeNotice(); renderBoard();
-}
 
 function openSources(){
   renderSources();
-  document.getElementById('sourcesAdmin').style.display = isAdmin() ? 'block' : 'none';
   document.getElementById('sourcesModalBg').classList.add('open');
 }
 function closeSources(){ document.getElementById('sourcesModalBg').classList.remove('open'); }
@@ -939,52 +683,8 @@ function renderSources(){
       <div class="share-row" style="margin-top:8px">
         <button onclick="window.open('${esc(src.url)}','_blank')">Open FB</button>
         ${src.phone ? `<button onclick="location.href='tel:${esc(src.phone)}'">📞 Call</button>` : ''}
-        ${isAdmin() ? `<button onclick="removeSource(${i})" style="color:#B91C1C">✕</button>` : ''}
       </div>
     </div>`).join('');
-}
-function addSource(){
-  const name = document.getElementById('src-name').value.trim();
-  const url = document.getElementById('src-url').value.trim();
-  const phone = document.getElementById('src-phone').value.trim();
-  if (!name || !url){ alert('Enter at least a name and FB link.'); return; }
-  const list = store.sources; list.push({name, url, phone});
-  store.sources = list;
-  document.getElementById('src-name').value = '';
-  document.getElementById('src-url').value = '';
-  document.getElementById('src-phone').value = '';
-  renderSources();
-}
-function removeSource(i){
-  if (!confirm('Remove this source?')) return;
-  const list = store.sources; list.splice(i, 1);
-  store.sources = list; renderSources();
-}
-
-function exportJson(){
-  const data = JSON.stringify({trips:store.trips, notice:store.notice, exported:Date.now()}, null, 2);
-  const blob = new Blob([data], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'biyaheng-pantalan.json';
-  a.click();
-}
-function importJson(ev){
-  const f = ev.target.files[0];
-  if (!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      const d = JSON.parse(r.result);
-      if (!Array.isArray(d.trips)) throw 0;
-      store.trips = d.trips;
-      store.notice = d.notice || '';
-      closeNotice(); renderBoard();
-      alert('Board loaded — ' + d.trips.length + ' trip(s).');
-    } catch { alert('That file is not a valid board export.'); }
-  };
-  r.readAsText(f);
-  ev.target.value = '';
 }
 
 async function shareData(){
@@ -1014,57 +714,6 @@ document.querySelectorAll('.modal-bg').forEach(bg => {
   bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
 });
 
-/* ---- Paste FB post parser ---- */
-function openPaste(){
-  document.getElementById('f-paste').value = '';
-  document.getElementById('parsedList').innerHTML = '';
-  document.getElementById('parsedActions').style.display = 'none';
-  document.getElementById('pasteModalBg').classList.add('open');
-}
-function closePaste(){ document.getElementById('pasteModalBg').classList.remove('open'); }
-
-function to24(h, m, ap){
-  h = parseInt(h); m = m ? parseInt(m) : 0;
-  if (ap){
-    ap = ap.toUpperCase().replace(/\./g,'');
-    if (ap.startsWith('P') && h < 12) h += 12;
-    if (ap.startsWith('A') && h === 12) h = 0;
-  }
-  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
-}
-
-function parsePaste_detectSuspension(text, lines){
-  const suspRe = /(?:pcg|coast\s*guard|pagasa|signal\s*no\.?\s*[\d#]|suspension\s*of|walang\s*biyahe|vessels?\s+\d+\s*gt|small\s*craft|advised\s*not\s*to\s*sail|tropical\s*(storm|depression|cyclone)|typhoon|habagat)/i;
-  if (!suspRe.test(text)) return null;
-  return lines.find(l => suspRe.test(l) && l.length > 10) || lines[0];
-}
-
-const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
-function parseDateLine(l){
-  // "JULY 8", "July 8, 2026", "Jul. 8", "7/8", "07/08/2026"
-  let m = l.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?\b/i);
-  const now = new Date();
-  if (m){
-    const y = m[3] ? parseInt(m[3]) : now.getFullYear();
-    const d = new Date(y, MONTHS[m[1].slice(0,3).toLowerCase()], parseInt(m[2]));
-    if (!m[3] && d < new Date(now.getFullYear(), now.getMonth(), now.getDate() - 60)) d.setFullYear(y + 1);
-    return iso(d);
-  }
-  m = l.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
-  if (m && parseInt(m[1]) <= 12 && parseInt(m[2]) <= 31 && !l.match(/\d{1,2}:\d{2}/)){
-    let y = m[3] ? parseInt(m[3]) : now.getFullYear();
-    if (y < 100) y += 2000;
-    return iso(new Date(y, parseInt(m[1]) - 1, parseInt(m[2])));
-  }
-  return null;
-}
-
-let tesseractLoading = null;
-const TESS_SOURCES = [
-  'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js',
-  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
-  'https://unpkg.com/tesseract.js@5/dist/tesseract.min.js'
-];
 function loadScript(src){
   return new Promise((res, rej) => {
     const sc = document.createElement('script');
@@ -1072,353 +721,7 @@ function loadScript(src){
     document.head.appendChild(sc);
   });
 }
-async function loadTesseract(){
-  if (window.Tesseract) return;
-  if (tesseractLoading) return tesseractLoading;
-  tesseractLoading = (async () => {
-    for (const src of TESS_SOURCES){
-      try { await loadScript(src); return; } catch(e){ /* try next */ }
-    }
-    tesseractLoading = null;
-    throw new Error('all sources blocked');
-  })();
-  return tesseractLoading;
-}
 
-function preprocessImage(file){
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const scale = Math.min(3, Math.max(1, 2000 / img.width)); // upscale small photos
-        const c = document.createElement('canvas');
-        c.width = Math.round(img.width * scale);
-        c.height = Math.round(img.height * scale);
-        const ctx = c.getContext('2d');
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(img, 0, 0, c.width, c.height);
-        const d = ctx.getImageData(0, 0, c.width, c.height);
-        const px = d.data;
-        for (let i = 0; i < px.length; i += 4){
-          // grayscale + mild contrast boost
-          let g = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
-          g = Math.max(0, Math.min(255, (g - 128) * 1.35 + 128));
-          px[i] = px[i+1] = px[i+2] = g;
-        }
-        ctx.putImageData(d, 0, 0);
-        resolve(c.toDataURL('image/png'));
-      } catch(e){ resolve(file); } // fall back to raw file
-    };
-    img.onerror = () => resolve(file);
-    img.src = URL.createObjectURL(file);
-  });
-}
-
-async function ocrPhoto(ev){
-  const file = ev.target.files[0];
-  ev.target.value = '';
-  if (!file) return;
-  const st = document.getElementById('ocrStatus');
-  st.style.display = 'block';
-  st.textContent = 'Loading text reader… (first time needs internet)';
-  try {
-    await loadTesseract();
-    st.textContent = 'Preparing photo…';
-    const prepped = await preprocessImage(file);
-    st.textContent = 'Reading photo… 0%';
-    const { data } = await Tesseract.recognize(prepped, 'eng', {
-      logger: m => {
-        if (m.status === 'recognizing text')
-          st.textContent = 'Reading photo… ' + Math.round(m.progress * 100) + '%';
-      }
-    });
-    const text = (data.text || '').trim();
-    if (!text){
-      st.textContent = 'No text found in the photo. Tip: on iPhone, press-and-hold the text in the photo, Copy, then paste it here — it is often more accurate.';
-      return;
-    }
-    document.getElementById('f-paste').value = text;
-    st.textContent = 'Text extracted — check it, then tap Detect trips.';
-    parsePaste();
-  } catch(e){
-    st.textContent = 'Text reader blocked in this viewer. It works when the app is opened in Safari from a hosted link. For now: press-and-hold the text in the photo, tap Copy, then paste it here — iPhone Live Text is very accurate.';
-  }
-}
-
-function parsePaste(){
-  let text = document.getElementById('f-paste').value;
-  if (!text.trim()){ alert('Paste the post text first.'); return; }
-  // FB posts often break "2:00" and "pm ETD ..." across lines — rejoin them
-  text = text.replace(/(\d)\s*\n\s*(am|pm|a\.m\.|p\.m\.|nn|mn|h)\b/gi, '$1 $2');
-  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
-
-  // PCG/PAGASA suspension advisory detection
-  const advLine = parsePaste_detectSuspension(text, lines);
-  const parsedAdv = document.getElementById('parsedAdvisory');
-  if (advLine && parsedAdv){
-    document.getElementById('parsedAdvText').textContent = advLine;
-    document.getElementById('parsedAdvFull').value = advLine;
-    parsedAdv.style.display = 'block';
-  } else if (parsedAdv){
-    parsedAdv.style.display = 'none';
-  }
-
-  // Post-wide fallbacks
-  const cleanVessel = v => v.replace(/\b(trip|schedule|advisory|notice|update|departure)s?\b.*$/i,'').trim();
-  const PORTS = [
-    ['PUERTO PRINCESA CITY', ['puerto princesa','puerto','ppc']],
-    ['CUYO', ['cuyo']],
-    ['ILOILO CITY', ['iloilo','ilo-ilo','ilo ilo']],
-    ['MANILA', ['manila']],
-    ['CORON', ['coron']],
-    ['AGUTAYA', ['agutaya']],
-    ['BISUCAY', ['bisucay']]
-  ];
-  function portTokens(text){
-    const t = ' ' + text.toLowerCase() + ' ';
-    const hits = [];
-    for (const [canon, aliases] of PORTS){
-      for (const a of aliases){
-        let idx = t.indexOf(a);
-        while (idx !== -1){
-          hits.push({idx, canon});
-          idx = t.indexOf(a, idx + a.length);
-        }
-      }
-    }
-    hits.sort((x,y) => x.idx - y.idx);
-    // dedupe consecutive same-port hits (e.g. "puerto princesa" + "puerto")
-    const out = [];
-    for (const h of hits) if (!out.length || out[out.length-1].canon !== h.canon || h.idx - out[out.length-1].idx > 25) out.push(h);
-    return out.map(h => h.canon);
-  }
-
-  const NOT_PLACE = /\b(due|tentative|season|weather|habagat|amihan|signal|lpa|storm|typhoon|subject|schedule|advisory|notice|trip|departure|etd|vessel|from|date|time|voyage|boarding)\b/i;
-  const cleanPlace = p => p.replace(/\b(etd|etd:|departure:?|dep:?)\b/ig,'').replace(/[^A-Za-zÑñ' .]/g,'').trim();
-  const isPlace = p => { p = cleanPlace(p); return p.length >= 3 && !NOT_PLACE.test(p); };
-
-  let postVessel = '', postFrom = '', postTo = '';
-  const vRe = /\b(M\/?[VBL]\.?|MTUG|LCT|F\/?B)\s+([A-Za-z0-9ÑñÉé' .-]{2,30}?)(?=\s*(?:[-–—•|,(]|to\b|from\b|$))/i;
-  const routeRe = /([A-Za-zÑñ' .]{3,25}?)(?:\s+[Tt][Oo]\s+|\s*[-–—→>]\s*|\s*➡️?\s*)([A-Za-zÑñ' .]{3,25})/;
-  const timeRe = /\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM|A\.M\.|P\.M\.|NN|MN)\b|\b(\d{1,2}):(\d{2})\s*H?\b|\b(\d{4})\s*H\b/i;
-  const cancelRe = /(cancel+ed|suspended|no trip|walang biyahe|postponed)/i;
-
-  const schedOfRe = /schedule\s+of\s+(?:the\s+)?(m[vbl]\.?\s+)?([A-Za-zÑñ' .]{2,30}?)(?=\s+vice\s+versa|\s*[\(\-–—,]|$)/i;
-  for (const l of lines){
-    if (!postVessel){
-      const m = l.match(vRe);
-      if (m) postVessel = cleanVessel((m[1].replace('.','').replace('/','') + ' ' + m[2]).trim());
-      else {
-        const so = l.match(schedOfRe);
-        if (so) postVessel = cleanVessel(((so[1] ? so[1].replace('.','').toUpperCase().trim() + ' ' : 'MV ') + so[2]).trim());
-      }
-    }
-    if (!postFrom){
-      const m = l.match(routeRe);
-      if (m && !l.match(timeRe) && isPlace(m[1]) && isPlace(m[2])){ postFrom = cleanPlace(m[1]); postTo = cleanPlace(m[2]); }
-    }
-  }
-
-
-  const found = [];
-  const seen = new Set();
-  let curDate = iso(new Date());
-  for (const l of lines){
-    if (/boarding/i.test(l)) continue; // boarding time is not the ETD
-    if (/\b(ETA|arrival|arrives?|dating)\b/i.test(l)) {
-      // arrival info: attach it to the trip just above as ETA
-      const ed = parseDateLine(l);       // ETA lines carry their own date
-      if (ed) curDate = ed;
-      const at = l.match(timeRe);
-      if (at && found.length){
-        let eta;
-        if (at[6]) eta = at[6].slice(0,2) + ':' + at[6].slice(2);
-        else if (at[4]) eta = to24(at[4], at[5], null);
-        else {
-          let ap = at[3];
-          if (/NN/i.test(ap)) eta = '12:00';
-          else if (/MN/i.test(ap)) eta = '00:00';
-          else eta = to24(at[1], at[2], ap);
-        }
-        found[found.length - 1].eta = eta;
-        found[found.length - 1].etaDate = curDate || found[found.length - 1].date;
-      }
-      continue;
-    }
-    const t = l.match(timeRe);
-    if (!t){
-      const d = parseDateLine(l);
-      if (d) curDate = d;   // a date header applies to the trips below it
-      continue;
-    }
-    // a line can carry its own date before the time ("JULY 8 - 2:00 pm ETD ...")
-    const inlineDate = parseDateLine(l.slice(0, l.indexOf(t[0])));
-    if (inlineDate) curDate = inlineDate;
-    let time;
-    if (t[6]) time = t[6].slice(0,2) + ':' + t[6].slice(2);            // 0830H
-    else if (t[4]) time = to24(t[4], t[5], null);                       // 14:00
-    else {
-      let ap = t[3];
-      if (/NN/i.test(ap)) { time = '12:00'; }
-      else if (/MN/i.test(ap)) { time = '00:00'; }
-      else time = to24(t[1], t[2], ap);
-    }
-    // Pull out (...) remarks first — they are notes, not part of the route
-    let parenNote = '';
-    let lClean = l.replace(/\(([^)]*)\)/g, (_, inner) => { 
-      if (inner.trim()) parenNote += (parenNote ? ' · ' : '') + inner.trim().replace(/\s+/g,' ');
-      return ' ';
-    });
-    // Strip the matched time and leftover am/pm + ETD tokens before reading the route
-    let rest = lClean.replace(t[0], ' ')
-                .replace(/^\s*(am|pm|a\.m\.|p\.m\.|h)\b/i, ' ')
-                .replace(/\b(etd|departure|dep)\s*:?/ig, ' ')
-                .replace(/\s+/g, ' ').trim();
-    // "due to" is never a route
-    const restForRoute = rest.replace(/\bdue\s+to\b/ig, 'due-to');
-    let vm = l.match(vRe);
-    if (vm){
-      // don't let the vessel name swallow the FROM/TO ports (table rows)
-      let vname = vm[2];
-      const lower = vname.toLowerCase();
-      let cut = -1;
-      for (const [, aliases] of PORTS)
-        for (const a of aliases){
-          const idx = lower.indexOf(a);
-          if (idx > 0 && (cut === -1 || idx < cut)) cut = idx;
-        }
-      if (cut > 0) vm = [vm[0], vm[1], vname.slice(0, cut).trim()];
-    }
-    const rm = restForRoute.match(routeRe);
-    let from = '', to = '', note = '';
-    if (rm && isPlace(rm[1]) && isPlace(rm[2])){
-      from = cleanPlace(rm[1]); to = cleanPlace(rm[2]);
-      note = parenNote;
-    } else {
-      // table-row style: two known port names side by side (VESSEL FROM TO DATE TIME)
-      const ports = portTokens(restForRoute);
-      if (ports.length >= 2 && ports[0] !== ports[1]){
-        from = ports[0]; to = ports[1]; note = parenNote;
-      } else {
-        from = postFrom; to = postTo;
-        // anything meaningful left over becomes a note (e.g. "tentative due to Habagat season")
-        const leftover = rest.replace(vRe, '').replace(/\s+/g,' ').trim();
-        note = [parenNote, leftover.length > 3 ? leftover : ''].filter(Boolean).join(' · ');
-      }
-    }
-    const key = curDate + '|' + time + '|' + from.toUpperCase() + '|' + to.toUpperCase();
-    if (seen.has(key)) continue; // skip duplicate trips (same date + time + route)
-    seen.add(key);
-    found.push({
-      date: curDate,
-      time,
-      vessel: vm ? cleanVessel((vm[1].replace('.','').replace('/','') + ' ' + vm[2]).trim()) : postVessel,
-      from, to, note,
-      cancelled: cancelRe.test(l) || cancelRe.test(text) && lines.length <= 3,
-      src: l
-    });
-  }
-
-  // estimate missing ETAs from known route durations
-  for (const f of found){
-    if (!f.eta){
-      const est = estimateEta(f.date, f.time, f.from, f.to);
-      if (est){ f.eta = est.eta; f.etaDate = est.etaDate; f.etaEst = true; }
-    }
-  }
-
-  const list = document.getElementById('parsedList');
-  if (!found.length){
-    list.innerHTML = '<p class="hint" style="margin-top:12px">No departure times detected. You can still add the trip manually with ＋ Add.</p>';
-    document.getElementById('parsedActions').style.display = 'none';
-    return;
-  }
-  list.innerHTML = found.map((f,i) => `
-    <div class="parsed-item">
-      <div class="head">
-        <input type="checkbox" id="p-on-${i}" checked>
-        <b>${fmtTime(f.time)}</b>
-        <small style="color:#7A8C93">${esc(f.src.slice(0,42))}${f.src.length>42?'…':''}</small>
-      </div>
-      <div class="grid">
-        <input id="p-date-${i}" type="date" value="${f.date}">
-        <input id="p-eta-${i}" type="time" value="${f.eta || ''}" title="ETA (arrival)${f.etaEst ? ' — estimated' : ''}" style="${f.etaEst ? 'border-style:dashed' : ''}">
-        <input type="hidden" id="p-est-${i}" value="${f.etaEst ? '1' : ''}">
-        <input id="p-etadate-${i}" type="date" value="${f.etaDate || f.date}" title="ETA date">
-        <input id="p-time-${i}" type="time" value="${f.time}">
-        <input id="p-vessel-${i}" type="text" placeholder="Vessel" value="${esc(f.vessel)}">
-        <input id="p-from-${i}" type="text" placeholder="From" value="${esc(f.from)}">
-        <input id="p-to-${i}" type="text" placeholder="To" value="${esc(f.to)}">
-        <input class="full" id="p-note-${i}" type="text" placeholder="Note (optional)" value="${esc(f.note || '')}">
-        <label class="full" style="margin:0;display:flex;align-items:center;gap:7px;text-transform:none;font-size:13px;letter-spacing:0">
-          <input type="checkbox" id="p-cx-${i}" ${f.cancelled?'checked':''} style="width:18px;height:18px;accent-color:#B91C1C">
-          Mark as cancelled
-        </label>
-      </div>
-    </div>`).join('');
-  list.dataset.count = found.length;
-  document.getElementById('parsedActions').style.display = 'flex';
-}
-
-function addParsed(){
-  const n = parseInt(document.getElementById('parsedList').dataset.count || 0);
-  const trips = store.trips;
-  let added = 0;
-  for (let i = 0; i < n; i++){
-    if (!document.getElementById('p-on-' + i).checked) continue;
-    const date = document.getElementById('p-date-' + i).value;
-    let eta = document.getElementById('p-eta-' + i).value;
-    let etaDate = document.getElementById('p-etadate-' + i).value || date;
-    let etaEst = false;
-    const time = document.getElementById('p-time-' + i).value;
-    const vessel = document.getElementById('p-vessel-' + i).value.trim();
-    const from = document.getElementById('p-from-' + i).value.trim();
-    const to = document.getElementById('p-to-' + i).value.trim();
-    etaEst = !!(document.getElementById('p-est-' + i) && document.getElementById('p-est-' + i).value);
-    if (!eta){
-      const est = estimateEta(date, time, from, to);
-      if (est){ eta = est.eta; etaDate = est.etaDate; etaEst = true; }
-    }
-    if (!date || !time || !vessel || !from || !to) continue;
-    const note = document.getElementById('p-note-' + i).value.trim();
-    trips.push({
-      id: 't' + Date.now() + '_' + i, date, time, vessel, from, to, note, eta, etaDate, etaEst,
-      status: document.getElementById('p-cx-' + i).checked ? 'cancelled' : 'ontime'
-    });
-    added++;
-  }
-  store.trips = trips;
-  closePaste(); renderBoard();
-  alert(added + ' trip(s) added to the board.');
-}
-
-function quickAdd(){
-  const vessel = document.getElementById('q-vessel').value.trim();
-  const from = document.getElementById('q-from').value.trim();
-  const to = document.getElementById('q-to').value.trim();
-  const date = document.getElementById('q-date').value || viewDate;
-  const time = document.getElementById('q-etd').value;
-  const eta = document.getElementById('q-eta').value;
-  if (!vessel || !from || !to || !time){
-    alert('Need vessel, route, and ETD.');
-    return;
-  }
-  const trips = store.trips;
-  let etaDate = eta ? ((eta < time) ? nextDay(date) : date) : '';
-  let etaEst = false, etaF = eta;
-  if (!etaF){
-    const est = estimateEta(date, time, from, to);
-    if (est){ etaF = est.eta; etaDate = est.etaDate; etaEst = true; }
-  }
-  trips.push({id:'t' + Date.now(), date, time, eta:etaF, etaDate, etaEst, vessel, from, to, note:'', status:'ontime'});
-  store.trips = trips;
-  // keep vessel+route for the return trip: swap from/to, clear times
-  document.getElementById('q-from').value = to;
-  document.getElementById('q-to').value = from;
-  document.getElementById('q-etd').value = '';
-  document.getElementById('q-eta').value = '';
-  if (date !== viewDate) setDay(date); else renderBoard();
-}
 
 let clientTripId = null;
 function openClient(id){
@@ -1559,12 +862,27 @@ function renderWeather(data, stale){
   document.getElementById('wxCard').classList.toggle('wx-offline', !!stale);
 }
 
-applyMode();
+/* ---------- Advisory popup (auto-shown when notice is new/changed) ---------- */
+function checkAdvisoryPopup(){
+  const notice = store.notice;
+  if (!notice) return;
+  const seen = localStorage.getItem('bb_notice_seen');
+  if (notice === seen) return; // already acknowledged this exact advisory
+  document.getElementById('advisoryPopupText').textContent = notice;
+  document.getElementById('advisoryPopupBg').classList.add('open');
+}
+function closeAdvisoryPopup(){
+  localStorage.setItem('bb_notice_seen', store.notice);
+  document.getElementById('advisoryPopupBg').classList.remove('open');
+}
+
 renderDays();
 renderBoard();
 initCloud();
 initIOSBanner();
 loadWeather();
+checkAdvisoryPopup();
+setTimeout(initNotifState, 1500); // give OneSignal SDK a moment to load
 window.addEventListener('online', loadWeather);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 setInterval(renderBoard, 60000);

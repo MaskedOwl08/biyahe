@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Biyaheng Pantalan · Admin</title>
+<style>
+:root{
+  --deep:#083344; --board:#0B4258; --foam:#EAF6F6; --ink:#10242C;
+  --flip:#062B38; --amber:#FFB454; --go:#4ADE80; --warn:#FBBF24; --stop:#F87171; --line:#1B5A72;
+}
+*{box-sizing:border-box;margin:0}
+body{
+  font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--deep); color:var(--foam); min-height:100vh;
+}
+/* ---------- PIN gate ---------- */
+#gate{
+  position:fixed; inset:0; background:var(--deep); display:flex;
+  align-items:center; justify-content:center; z-index:50;
+}
+#gate .box{ text-align:center; }
+#gate h1{ font-size:20px; margin-bottom:16px; }
+#gate input{
+  font-size:22px; letter-spacing:.3em; text-align:center; padding:12px 16px;
+  border-radius:10px; border:1px solid var(--line); background:var(--board); color:#fff;
+  width:200px;
+}
+#gate button{
+  display:block; margin:14px auto 0; padding:10px 28px; border:0; border-radius:8px;
+  background:var(--amber); color:var(--deep); font-weight:800; font-size:14px; cursor:pointer;
+}
+#gate p{ color:#F87171; font-size:13px; margin-top:10px; min-height:16px; }
+
+/* ---------- layout ---------- */
+header{
+  padding:20px 28px; display:flex; justify-content:space-between; align-items:center;
+  border-bottom:1px solid var(--line);
+}
+h1{ font-size:20px; font-weight:800; }
+h1 span{ color:var(--amber); }
+.sync{ font-size:12px; color:#7FB3C4; }
+main{ max-width:1100px; margin:0 auto; padding:24px 28px 60px; }
+.panel{
+  background:var(--board); border:1px solid var(--line); border-radius:14px;
+  padding:18px 20px; margin-bottom:20px;
+}
+.panel h2{ font-size:15px; margin-bottom:14px; color:#fff; }
+.grid-form{
+  display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr auto; gap:8px; align-items:end;
+}
+.grid-form label{ font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#7FB3C4; display:block; margin-bottom:4px; }
+.grid-form input, .grid-form select{
+  width:100%; padding:9px 10px; font-size:14px; border:1px solid var(--line);
+  border-radius:7px; background:var(--flip); color:var(--foam);
+}
+.grid-form button{
+  padding:10px 18px; border:0; border-radius:8px; background:var(--amber);
+  color:var(--deep); font-weight:800; font-size:13px; cursor:pointer; white-space:nowrap;
+}
+table{ width:100%; border-collapse:collapse; margin-top:6px; }
+th{
+  text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em;
+  color:#7FB3C4; padding:8px 10px; border-bottom:1px solid var(--line);
+}
+td{ padding:9px 10px; border-bottom:1px solid rgba(27,90,114,.5); font-size:13.5px; }
+td.time{ font-variant-numeric:tabular-nums; color:var(--amber); font-weight:700; }
+select.status{
+  padding:5px 8px; border-radius:6px; border:1px solid var(--line); font-size:12px; font-weight:700;
+  background:var(--flip); color:#fff;
+}
+select.status[data-s="ontime"]{ color:var(--go) }
+select.status[data-s="delayed"]{ color:var(--warn) }
+select.status[data-s="cancelled"]{ color:var(--stop) }
+.row-actions button{
+  background:none; border:1px solid var(--line); color:#9CCADB; border-radius:6px;
+  padding:5px 9px; font-size:12px; cursor:pointer; margin-right:4px;
+}
+.row-actions button.danger{ border-color:#7A2C2C; color:#F87171; }
+textarea, input[type=text].wide{
+  width:100%; padding:10px 12px; font-size:14px; border:1px solid var(--line);
+  border-radius:8px; background:var(--flip); color:var(--foam); font-family:inherit;
+}
+textarea{ min-height:70px; resize:vertical; }
+.check{ display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; color:#9CCADB; }
+.actions-row{ display:flex; gap:10px; margin-top:12px; }
+.actions-row button{
+  padding:10px 20px; border:0; border-radius:8px; font-weight:800; font-size:13px; cursor:pointer;
+}
+.btn-save{ background:var(--amber); color:var(--deep); }
+.btn-clear{ background:var(--flip); color:#9CCADB; border:1px solid var(--line) !important; }
+.empty-row td{ text-align:center; color:#5E93A6; padding:24px; }
+.toast{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+  background:var(--board); border:1px solid var(--amber); color:#fff; padding:10px 20px;
+  border-radius:10px; font-size:13px; display:none; z-index:60;
+}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="box">
+    <h1>🔒 Admin PIN</h1>
+    <input type="password" id="pinInput" inputmode="numeric" maxlength="6" placeholder="••••••" autofocus>
+    <button onclick="checkPin()">Unlock</button>
+    <p id="pinError"></p>
+  </div>
+</div>
+
+<header>
+  <h1>⛴️ Biyaheng <span>Pantalan</span> — Admin</h1>
+  <div class="sync" id="syncStatus">Connecting…</div>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>➕ Add trip</h2>
+    <div class="grid-form">
+      <div><label>Date</label><input type="date" id="a-date"></div>
+      <div><label>From</label><input type="text" id="a-from" placeholder="Cuyo"></div>
+      <div><label>To</label><input type="text" id="a-to" placeholder="Puerto Princesa"></div>
+      <div><label>Vessel</label><input type="text" id="a-vessel" placeholder="MV Example"></div>
+      <div><label>ETD</label><input type="time" id="a-etd"></div>
+      <div><label>ETA (optional)</label><input type="time" id="a-eta"></div>
+      <button onclick="addTrip()">Add trip</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>📋 All trips</h2>
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Time</th><th>Route</th><th>Vessel</th><th>Status</th><th>Note</th><th></th></tr>
+      </thead>
+      <tbody id="tripsBody"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>📢 Port advisory</h2>
+    <textarea id="a-notice" placeholder="e.g. Signal No. 1 — all small craft trips suspended"></textarea>
+    <div class="check">
+      <input type="checkbox" id="a-notify" checked>
+      <span>🔔 Send push notification to subscribed passengers</span>
+    </div>
+    <div class="actions-row">
+      <button class="btn-save" onclick="saveNotice()">Save advisory</button>
+      <button class="btn-clear" onclick="clearNotice()">Clear advisory</button>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+/* ============ CONFIG ============ */
+const ADMIN_PIN = "093015";
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA3ix9PAsO3HzCP6eMJiXpDCMaNH4RraVY",
+  authDomain: "biyahe-e4f9f.firebaseapp.com",
+  projectId: "biyahe-e4f9f",
+  storageBucket: "biyahe-e4f9f.firebasestorage.app",
+  messagingSenderId: "422252815402",
+  appId: "1:422252815402:web:3aa2ad15743a4b71020f53"
+};
+const WORKER_URL = "https://biyahe-push.roiaballa7.workers.dev";
+
+/* ============ PIN GATE ============ */
+function checkPin(){
+  const val = document.getElementById('pinInput').value;
+  if (val === ADMIN_PIN){
+    sessionStorage.setItem('adminUnlocked', '1');
+    document.getElementById('gate').style.display = 'none';
+    init();
+  } else {
+    document.getElementById('pinError').textContent = 'Incorrect PIN';
+  }
+}
+document.getElementById('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPin(); });
+if (sessionStorage.getItem('adminUnlocked') === '1'){
+  document.getElementById('gate').style.display = 'none';
+  window.addEventListener('DOMContentLoaded', init);
+}
+
+/* ============ FIRESTORE ============ */
+let db, trips = [], notice = '', applyingRemote = false;
+
+function init(){
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.firestore();
+  db.collection('board').doc('main').onSnapshot(snap => {
+    if (!snap.exists) return;
+    const d = snap.data();
+    trips = d.trips || [];
+    notice = d.notice || '';
+    document.getElementById('a-notice').value = notice;
+    document.getElementById('syncStatus').textContent = '⚡ Live · synced';
+    renderTrips();
+  }, err => {
+    document.getElementById('syncStatus').textContent = '⚠️ Connection error';
+    console.warn(err);
+  });
+  document.getElementById('a-date').value = new Date().toISOString().slice(0,10);
+}
+
+function saveBoard(){
+  db.collection('board').doc('main').set({
+    trips, notice, updated: Date.now()
+  }, { merge: true }).catch(e => showToast('Save failed: ' + e.message));
+}
+
+/* ============ TRIPS ============ */
+function renderTrips(){
+  const body = document.getElementById('tripsBody');
+  if (!trips.length){
+    body.innerHTML = '<tr class="empty-row"><td colspan="7">No trips yet. Add one above.</td></tr>';
+    return;
+  }
+  const sorted = [...trips].sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
+  body.innerHTML = sorted.map(t => `
+    <tr>
+      <td>${t.date}</td>
+      <td class="time">${t.time}</td>
+      <td>${esc(t.from)} → ${esc(t.to)}</td>
+      <td>${esc(t.vessel)}</td>
+      <td>
+        <select class="status" data-s="${t.status}" onchange="updateStatus('${t.id}', this.value)">
+          <option value="ontime" ${t.status==='ontime'?'selected':''}>On time</option>
+          <option value="delayed" ${t.status==='delayed'?'selected':''}>Delayed</option>
+          <option value="cancelled" ${t.status==='cancelled'?'selected':''}>Cancelled</option>
+        </select>
+      </td>
+      <td>${esc(t.note || '')}</td>
+      <td class="row-actions">
+        <button class="danger" onclick="deleteTrip('${t.id}')">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function addTrip(){
+  const date = document.getElementById('a-date').value;
+  const from = document.getElementById('a-from').value.trim();
+  const to = document.getElementById('a-to').value.trim();
+  const vessel = document.getElementById('a-vessel').value.trim();
+  const time = document.getElementById('a-etd').value;
+  const eta = document.getElementById('a-eta').value;
+  if (!date || !from || !to || !vessel || !time){
+    showToast('Need date, from, to, vessel, and ETD.');
+    return;
+  }
+  trips.push({
+    id: 't' + Date.now(), date, time, eta, vessel, from, to, note:'', status:'ontime'
+  });
+  saveBoard();
+  document.getElementById('a-vessel').value = '';
+  document.getElementById('a-etd').value = '';
+  document.getElementById('a-eta').value = '';
+  showToast('Trip added ✓');
+}
+
+function updateStatus(id, status){
+  const t = trips.find(x => x.id === id);
+  if (!t) return;
+  t.status = status;
+  saveBoard();
+  showToast('Status updated ✓');
+}
+
+function deleteTrip(id){
+  if (!confirm('Delete this trip?')) return;
+  trips = trips.filter(x => x.id !== id);
+  saveBoard();
+  showToast('Trip deleted');
+}
+
+/* ============ ADVISORY ============ */
+async function saveNotice(){
+  const val = document.getElementById('a-notice').value.trim();
+  notice = val;
+  saveBoard();
+  if (val && document.getElementById('a-notify').checked){
+    try {
+      await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: val })
+      });
+      showToast('Advisory saved & push sent ✓');
+    } catch(e){
+      showToast('Advisory saved, but push failed.');
+    }
+  } else {
+    showToast('Advisory saved ✓');
+  }
+}
+function clearNotice(){
+  document.getElementById('a-notice').value = '';
+  notice = '';
+  saveBoard();
+  showToast('Advisory cleared');
+}
+
+/* ============ TOAST ============ */
+let toastTimer;
+function showToast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.style.display = 'none', 3000);
+}
+</script>
+</body>
+</html>
