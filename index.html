@@ -205,6 +205,30 @@ textarea#f-paste{
   nav button{font-size:12px;padding:8px 2px}
 }
 #quickAdd input::placeholder{color:#5E93A6}
+
+/* weather card */
+.wx-card{
+  background:var(--board); border:1px solid var(--line); border-radius:14px;
+  padding:12px 14px; margin-bottom:12px;
+}
+.wx-top{display:flex; align-items:center; gap:12px}
+.wx-icon{font-size:34px; line-height:1}
+.wx-now b{font-size:22px; color:#fff}
+.wx-now .wx-desc{font-size:12.5px; color:#9CCADB}
+.wx-meta{margin-left:auto; text-align:right; font-size:11.5px; color:#7FB3C4; line-height:1.5}
+.wx-meta b{color:var(--amber); font-variant-numeric:tabular-nums}
+.wx-days{display:flex; gap:6px; margin-top:10px; overflow-x:auto}
+.wx-day{
+  flex:1 0 64px; text-align:center; background:var(--flip); border-radius:9px;
+  padding:8px 4px; font-size:11px; color:#9CCADB;
+}
+.wx-day .wx-day-icon{font-size:18px; margin:3px 0}
+.wx-day b{color:#fff; font-size:12px}
+.wx-stale{
+  margin-top:8px; font-size:11px; color:var(--warn); display:none;
+}
+.wx-offline .wx-stale{display:block}
+.wx-loading{font-size:12.5px; color:#7FB3C4; padding:6px 0}
 </style>
 </head>
 <body>
@@ -215,6 +239,27 @@ textarea#f-paste{
 </header>
 
 <div class="day-strip" id="dayStrip"></div>
+
+<div style="padding:0 14px">
+  <div class="wx-card" id="wxCard">
+    <div class="wx-loading" id="wxLoading">Loading weather…</div>
+    <div id="wxBody" style="display:none">
+      <div class="wx-top">
+        <div class="wx-icon" id="wxIcon">🌤️</div>
+        <div class="wx-now">
+          <b id="wxTemp">--°</b>
+          <div class="wx-desc" id="wxDesc">—</div>
+        </div>
+        <div class="wx-meta">
+          <div>💨 <b id="wxWind">--</b> km/h</div>
+          <div>🌊 <b id="wxWave">--</b> m swell</div>
+        </div>
+      </div>
+      <div class="wx-days" id="wxDays"></div>
+      <div class="wx-stale" id="wxStale">⚠️ Showing saved forecast — no connection to refresh</div>
+    </div>
+  </div>
+</div>
 
 <!-- AdMob banner — Bottom Banner unit -->
 <div id="adBanner" style="padding:4px 14px 8px;text-align:center;min-height:60px">
@@ -1411,13 +1456,119 @@ function clientCancel(){
   closeClient(); renderBoard();
 }
 
+/* ---------- Weather (Open-Meteo, offline-cached) ---------- */
+const WX_LAT = 10.8574, WX_LON = 121.0183; // Cuyo, Palawan
+const WX_CACHE_KEY = 'bb_weather_cache_v1';
+const WX_MAX_AGE_MS = 3 * 60 * 60 * 1000; // 3 hours before we consider it worth re-fetching
+
+const WX_ICONS = { // WMO weather codes -> emoji
+  0:'☀️',1:'🌤️',2:'⛅',3:'☁️',
+  45:'🌫️',48:'🌫️',
+  51:'🌦️',53:'🌦️',55:'🌦️',56:'🌦️',57:'🌦️',
+  61:'🌧️',63:'🌧️',65:'🌧️',66:'🌧️',67:'🌧️',
+  71:'🌨️',73:'🌨️',75:'🌨️',77:'🌨️',
+  80:'🌦️',81:'🌧️',82:'⛈️',
+  85:'🌨️',86:'🌨️',
+  95:'⛈️',96:'⛈️',99:'⛈️'
+};
+const WX_DESC = {
+  0:'Clear sky',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',
+  45:'Fog',48:'Fog',
+  51:'Light drizzle',53:'Drizzle',55:'Dense drizzle',56:'Freezing drizzle',57:'Freezing drizzle',
+  61:'Light rain',63:'Rain',65:'Heavy rain',66:'Freezing rain',67:'Freezing rain',
+  71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',
+  80:'Rain showers',81:'Rain showers',82:'Violent showers',
+  85:'Snow showers',86:'Snow showers',
+  95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'
+};
+function wxIcon(code){ return WX_ICONS[code] || '🌤️'; }
+function wxDesc(code){ return WX_DESC[code] || '—'; }
+function wxDayLabel(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((d - today) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  return d.toLocaleDateString('en-PH', { weekday:'short' });
+}
+
+async function loadWeather(){
+  const cached = JSON.parse(localStorage.getItem(WX_CACHE_KEY) || 'null');
+  const isFresh = cached && (Date.now() - cached.ts < WX_MAX_AGE_MS);
+
+  // show cached data immediately if we have it, so there's no blank flash
+  if (cached) renderWeather(cached, !navigator.onLine);
+
+  if (isFresh && cached) return; // don't refetch if recent enough
+
+  if (!navigator.onLine){
+    if (!cached) document.getElementById('wxLoading').textContent = 'No saved forecast yet — connect once to load weather.';
+    return;
+  }
+
+  try {
+    const wxUrl = `https://api.open-meteo.com/v1/forecast?latitude=${WX_LAT}&longitude=${WX_LON}` +
+      `&current=temperature_2m,weathercode,windspeed_10m&daily=weathercode,temperature_2m_max,temperature_2m_min` +
+      `&timezone=Asia%2FManila&forecast_days=4`;
+    const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${WX_LAT}&longitude=${WX_LON}` +
+      `&current=wave_height&timezone=Asia%2FManila`;
+
+    const [wxRes, marineRes] = await Promise.all([
+      fetch(wxUrl).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(marineUrl).then(r => r.ok ? r.json() : null).catch(() => null)
+    ]);
+
+    if (!wxRes) throw new Error('weather fetch failed');
+
+    const data = {
+      ts: Date.now(),
+      temp: wxRes.current?.temperature_2m,
+      wind: wxRes.current?.windspeed_10m,
+      code: wxRes.current?.weathercode,
+      wave: marineRes?.current?.wave_height ?? null,
+      days: (wxRes.daily?.time || []).map((date, i) => ({
+        date,
+        code: wxRes.daily.weathercode[i],
+        max: wxRes.daily.temperature_2m_max[i],
+        min: wxRes.daily.temperature_2m_min[i]
+      }))
+    };
+    localStorage.setItem(WX_CACHE_KEY, JSON.stringify(data));
+    renderWeather(data, false);
+  } catch (e){
+    // fetch failed (offline or API down) — fall back to whatever we already rendered from cache
+    if (cached) renderWeather(cached, true);
+    else document.getElementById('wxLoading').textContent = 'Weather unavailable right now.';
+  }
+}
+
+function renderWeather(data, stale){
+  document.getElementById('wxLoading').style.display = 'none';
+  document.getElementById('wxBody').style.display = 'block';
+  document.getElementById('wxIcon').textContent = wxIcon(data.code);
+  document.getElementById('wxTemp').textContent = (data.temp != null ? Math.round(data.temp) : '--') + '°C';
+  document.getElementById('wxDesc').textContent = wxDesc(data.code);
+  document.getElementById('wxWind').textContent = data.wind != null ? Math.round(data.wind) : '--';
+  document.getElementById('wxWave').textContent = data.wave != null ? data.wave.toFixed(1) : '--';
+  document.getElementById('wxDays').innerHTML = (data.days || []).map(d => `
+    <div class="wx-day">
+      <div>${wxDayLabel(d.date)}</div>
+      <div class="wx-day-icon">${wxIcon(d.code)}</div>
+      <b>${Math.round(d.max)}°</b>/${Math.round(d.min)}°
+    </div>`).join('');
+  document.getElementById('wxCard').classList.toggle('wx-offline', !!stale);
+}
+
 applyMode();
 renderDays();
 renderBoard();
 initCloud();
 initIOSBanner();
+loadWeather();
+window.addEventListener('online', loadWeather);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 setInterval(renderBoard, 60000);
+setInterval(loadWeather, 30 * 60 * 1000); // refresh every 30 min while app is open
 </script>
 </body>
 </html>
