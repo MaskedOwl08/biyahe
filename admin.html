@@ -95,6 +95,19 @@ textarea{ min-height:70px; resize:vertical; }
   background:var(--board); border:1px solid var(--amber); color:#fff; padding:10px 20px;
   border-radius:10px; font-size:13px; display:none; z-index:60;
 }
+.parsed-item{
+  border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-top:10px;
+  background:var(--flip);
+}
+.parsed-item .head{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.parsed-item .head input[type=checkbox]{ width:18px; height:18px; accent-color:var(--amber); }
+.parsed-item .head b{ font-size:14px; color:var(--amber); }
+.parsed-item .grid{ display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.parsed-item .grid input{
+  padding:8px 10px; font-size:13px; border:1px solid var(--line); border-radius:7px;
+  background:var(--board); color:var(--foam);
+}
+.parsed-item .grid .full{ grid-column:1 / -1; }
 </style>
 </head>
 <body>
@@ -124,6 +137,41 @@ textarea{ min-height:70px; resize:vertical; }
       <div><label>ETD</label><input type="time" id="a-etd"></div>
       <div><label>ETA (optional)</label><input type="time" id="a-eta"></div>
       <button onclick="addTrip()">Add trip</button>
+    </div>
+    <label class="check" style="margin-top:12px">
+      <input type="checkbox" id="a-trip-notify">
+      🔔 Also send push notification for this trip
+    </label>
+  </div>
+
+  <div class="panel">
+    <h2>📋 Paste a schedule post</h2>
+    <p style="font-size:12.5px;color:#7FB3C4;margin-bottom:10px">Copy an announcement from Facebook and paste it here, or read it from a photo. Times and vessel names are detected automatically — review before adding.</p>
+    <textarea id="p-paste" placeholder="e.g.&#10;TRIP SCHEDULE&#10;MV Milagrosa — Cuyo to Iloilo&#10;Departure: 8:00 PM&#10;..."></textarea>
+    <div class="actions-row">
+      <button class="btn-clear" onclick="document.getElementById('ocrFile').click()">📷 Read from photo</button>
+      <button class="btn-save" onclick="parsePaste()">Detect trips</button>
+    </div>
+    <input type="file" id="ocrFile" accept="image/*" style="display:none" onchange="ocrPhoto(event)">
+    <p id="ocrStatus" style="display:none;margin-top:8px;font-size:12.5px;color:#7FB3C4"></p>
+
+    <div id="parsedAdvisory" style="display:none;margin-top:14px;background:#FBF3DC;border:1px solid #C9A227;border-radius:10px;padding:12px 14px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#6B5A17;margin-bottom:6px">📢 Suspension / Advisory detected</div>
+      <div id="parsedAdvText" style="font-size:13px;color:#4A3A0A;margin-bottom:8px"></div>
+      <input type="text" id="parsedAdvFull" class="wide" style="margin-bottom:8px" placeholder="Edit advisory text…">
+      <div style="display:flex;gap:8px">
+        <button class="btn-save" onclick="applyParsedAdvisory()" style="flex:1">Set as advisory banner</button>
+        <button class="btn-clear" onclick="document.getElementById('parsedAdvisory').style.display='none'">Ignore</button>
+      </div>
+    </div>
+
+    <div id="parsedList"></div>
+    <label class="check" id="parsedNotifyRow" style="display:none">
+      <input type="checkbox" id="a-parsed-notify">
+      🔔 Also send push notification for these trips
+    </label>
+    <div class="actions-row" id="parsedActions" style="display:none">
+      <button class="btn-save" onclick="addParsed()">Add selected trips</button>
     </div>
   </div>
 
@@ -168,6 +216,38 @@ const FIREBASE_CONFIG = {
   appId: "1:422252815402:web:3aa2ad15743a4b71020f53"
 };
 const WORKER_URL = "https://biyahe-push.roiaballa7.workers.dev";
+
+/* ============ HELPERS ============ */
+const iso = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+const nextDay = ds => { const [y,mo,d] = ds.split('-').map(Number); return iso(new Date(y, mo-1, d+1)); };
+function fmtTime(t){
+  const [h,m] = t.split(':').map(Number);
+  const ap = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ap}`;
+}
+const ROUTE_HOURS = [
+  {a:['iloilo'], b:['cuyo'], hours:12},
+  {a:['cuyo'], b:['ppc','puerto princesa'], hours:16},
+];
+function routeHours(from, to){
+  const f = (from||'').toLowerCase(), t = (to||'').toLowerCase();
+  for (const r of ROUTE_HOURS){
+    const fa = r.a.some(x => f.includes(x)), fb = r.b.some(x => f.includes(x));
+    const ta = r.a.some(x => t.includes(x)), tb = r.b.some(x => t.includes(x));
+    if ((fa && tb) || (fb && ta)) return r.hours;
+  }
+  return null;
+}
+function estimateEta(date, time, from, to){
+  const h = routeHours(from, to);
+  if (!h || !date || !time) return null;
+  const [y,mo,d] = date.split('-').map(Number);
+  const [hh,mm] = time.split(':').map(Number);
+  const dt = new Date(y, mo-1, d, hh + h, mm);
+  return {eta: String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0'),
+          etaDate: iso(dt)};
+}
 
 /* ============ PIN GATE ============ */
 function checkPin(){
@@ -258,9 +338,14 @@ function addTrip(){
     id: 't' + Date.now(), date, time, eta, vessel, from, to, note:'', status:'ontime'
   });
   saveBoard();
+  if (document.getElementById('a-trip-notify').checked){
+    const msg = `New trip: ${vessel} — ${from} → ${to}, ${fmtDateShort(date)} ${fmtTime(time)}`;
+    pushMessage(msg);
+  }
   document.getElementById('a-vessel').value = '';
   document.getElementById('a-etd').value = '';
   document.getElementById('a-eta').value = '';
+  document.getElementById('a-trip-notify').checked = false;
   showToast('Trip added ✓');
 }
 
@@ -280,21 +365,31 @@ function deleteTrip(id){
 }
 
 /* ============ ADVISORY ============ */
+/* ============ PUSH HELPER ============ */
+async function pushMessage(msg){
+  try {
+    await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg })
+    });
+    return true;
+  } catch(e){
+    return false;
+  }
+}
+function fmtDateShort(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-PH', { month:'short', day:'numeric' });
+}
+
 async function saveNotice(){
   const val = document.getElementById('a-notice').value.trim();
   notice = val;
   saveBoard();
   if (val && document.getElementById('a-notify').checked){
-    try {
-      await fetch(WORKER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: val })
-      });
-      showToast('Advisory saved & push sent ✓');
-    } catch(e){
-      showToast('Advisory saved, but push failed.');
-    }
+    const ok = await pushMessage(val);
+    showToast(ok ? 'Advisory saved & push sent ✓' : 'Advisory saved, but push failed.');
   } else {
     showToast('Advisory saved ✓');
   }
@@ -304,6 +399,381 @@ function clearNotice(){
   notice = '';
   saveBoard();
   showToast('Advisory cleared');
+}
+
+/* ============ PASTE / OCR IMPORT ============ */
+function to24(h, m, ap){
+  h = parseInt(h); m = m ? parseInt(m) : 0;
+  if (ap){
+    ap = ap.toUpperCase().replace(/\./g,'');
+    if (ap.startsWith('P') && h < 12) h += 12;
+    if (ap.startsWith('A') && h === 12) h = 0;
+  }
+  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+}
+
+function parsePaste_detectSuspension(text, lines){
+  const suspRe = /(?:pcg|coast\s*guard|pagasa|signal\s*no\.?\s*[\d#]|suspension\s*of|walang\s*biyahe|vessels?\s+\d+\s*gt|small\s*craft|advised\s*not\s*to\s*sail|tropical\s*(storm|depression|cyclone)|typhoon|habagat)/i;
+  if (!suspRe.test(text)) return null;
+  return lines.find(l => suspRe.test(l) && l.length > 10) || lines[0];
+}
+
+const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+function parseDateLine(l){
+  let m = l.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?\b/i);
+  const now = new Date();
+  if (m){
+    const y = m[3] ? parseInt(m[3]) : now.getFullYear();
+    const d = new Date(y, MONTHS[m[1].slice(0,3).toLowerCase()], parseInt(m[2]));
+    if (!m[3] && d < new Date(now.getFullYear(), now.getMonth(), now.getDate() - 60)) d.setFullYear(y + 1);
+    return iso(d);
+  }
+  m = l.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (m && parseInt(m[1]) <= 12 && parseInt(m[2]) <= 31 && !l.match(/\d{1,2}:\d{2}/)){
+    let y = m[3] ? parseInt(m[3]) : now.getFullYear();
+    if (y < 100) y += 2000;
+    return iso(new Date(y, parseInt(m[1]) - 1, parseInt(m[2])));
+  }
+  return null;
+}
+
+let tesseractLoading = null;
+const TESS_SOURCES = [
+  'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js',
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+  'https://unpkg.com/tesseract.js@5/dist/tesseract.min.js'
+];
+function loadExternalScript(src){
+  return new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = src; sc.onload = res; sc.onerror = () => rej(new Error(src));
+    document.head.appendChild(sc);
+  });
+}
+async function loadTesseract(){
+  if (window.Tesseract) return;
+  if (tesseractLoading) return tesseractLoading;
+  tesseractLoading = (async () => {
+    for (const src of TESS_SOURCES){
+      try { await loadExternalScript(src); return; } catch(e){ /* try next */ }
+    }
+    tesseractLoading = null;
+    throw new Error('all sources blocked');
+  })();
+  return tesseractLoading;
+}
+
+function preprocessImage(file){
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(3, Math.max(1, 2000 / img.width));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        const d = ctx.getImageData(0, 0, c.width, c.height);
+        const px = d.data;
+        for (let i = 0; i < px.length; i += 4){
+          let g = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
+          g = Math.max(0, Math.min(255, (g - 128) * 1.35 + 128));
+          px[i] = px[i+1] = px[i+2] = g;
+        }
+        ctx.putImageData(d, 0, 0);
+        resolve(c.toDataURL('image/png'));
+      } catch(e){ resolve(file); }
+    };
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function ocrPhoto(ev){
+  const file = ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  const st = document.getElementById('ocrStatus');
+  st.style.display = 'block';
+  st.textContent = 'Loading text reader… (first time needs internet)';
+  try {
+    await loadTesseract();
+    st.textContent = 'Preparing photo…';
+    const prepped = await preprocessImage(file);
+    st.textContent = 'Reading photo… 0%';
+    const { data } = await Tesseract.recognize(prepped, 'eng', {
+      logger: m => {
+        if (m.status === 'recognizing text')
+          st.textContent = 'Reading photo… ' + Math.round(m.progress * 100) + '%';
+      }
+    });
+    const text = (data.text || '').trim();
+    if (!text){
+      st.textContent = 'No text found in the photo. Try a clearer screenshot, or paste the text manually.';
+      return;
+    }
+    document.getElementById('p-paste').value = text;
+    st.textContent = 'Text extracted — check it, then tap Detect trips.';
+    parsePaste();
+  } catch(e){
+    st.textContent = 'Text reader failed to load. Paste the text manually instead.';
+  }
+}
+
+function parsePaste(){
+  let text = document.getElementById('p-paste').value;
+  if (!text.trim()){ showToast('Paste the post text first.'); return; }
+  text = text.replace(/(\d)\s*\n\s*(am|pm|a\.m\.|p\.m\.|nn|mn|h)\b/gi, '$1 $2');
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+
+  const advLine = parsePaste_detectSuspension(text, lines);
+  const parsedAdv = document.getElementById('parsedAdvisory');
+  if (advLine && parsedAdv){
+    document.getElementById('parsedAdvText').textContent = advLine;
+    document.getElementById('parsedAdvFull').value = advLine;
+    parsedAdv.style.display = 'block';
+  } else if (parsedAdv){
+    parsedAdv.style.display = 'none';
+  }
+
+  const cleanVessel = v => v.replace(/\b(trip|schedule|advisory|notice|update|departure)s?\b.*$/i,'').trim();
+  const PORTS = [
+    ['PUERTO PRINCESA CITY', ['puerto princesa','puerto','ppc']],
+    ['CUYO', ['cuyo']],
+    ['ILOILO CITY', ['iloilo','ilo-ilo','ilo ilo']],
+    ['MANILA', ['manila']],
+    ['CORON', ['coron']],
+    ['AGUTAYA', ['agutaya']],
+    ['BISUCAY', ['bisucay']]
+  ];
+  function portTokens(text){
+    const t = ' ' + text.toLowerCase() + ' ';
+    const hits = [];
+    for (const [canon, aliases] of PORTS){
+      for (const a of aliases){
+        let idx = t.indexOf(a);
+        while (idx !== -1){
+          hits.push({idx, canon});
+          idx = t.indexOf(a, idx + a.length);
+        }
+      }
+    }
+    hits.sort((x,y) => x.idx - y.idx);
+    const out = [];
+    for (const h of hits) if (!out.length || out[out.length-1].canon !== h.canon || h.idx - out[out.length-1].idx > 25) out.push(h);
+    return out.map(h => h.canon);
+  }
+
+  const NOT_PLACE = /\b(due|tentative|season|weather|habagat|amihan|signal|lpa|storm|typhoon|subject|schedule|advisory|notice|trip|departure|etd|vessel|from|date|time|voyage|boarding)\b/i;
+  const cleanPlace = p => p.replace(/\b(etd|etd:|departure:?|dep:?)\b/ig,'').replace(/[^A-Za-zÑñ' .]/g,'').trim();
+  const isPlace = p => { p = cleanPlace(p); return p.length >= 3 && !NOT_PLACE.test(p); };
+
+  let postVessel = '', postFrom = '', postTo = '';
+  const vRe = /\b(M\/?[VBL]\.?|MTUG|LCT|F\/?B)\s+([A-Za-z0-9ÑñÉé' .-]{2,30}?)(?=\s*(?:[-–—•|,(]|to\b|from\b|$))/i;
+  const routeRe = /([A-Za-zÑñ' .]{3,25}?)(?:\s+[Tt][Oo]\s+|\s*[-–—→>]\s*|\s*➡️?\s*)([A-Za-zÑñ' .]{3,25})/;
+  const timeRe = /\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM|A\.M\.|P\.M\.|NN|MN)\b|\b(\d{1,2}):(\d{2})\s*H?\b|\b(\d{4})\s*H\b/i;
+  const cancelRe = /(cancel+ed|suspended|no trip|walang biyahe|postponed)/i;
+
+  const schedOfRe = /schedule\s+of\s+(?:the\s+)?(m[vbl]\.?\s+)?([A-Za-zÑñ' .]{2,30}?)(?=\s+vice\s+versa|\s*[\(\-–—,]|$)/i;
+  for (const l of lines){
+    if (!postVessel){
+      const m = l.match(vRe);
+      if (m) postVessel = cleanVessel((m[1].replace('.','').replace('/','') + ' ' + m[2]).trim());
+      else {
+        const so = l.match(schedOfRe);
+        if (so) postVessel = cleanVessel(((so[1] ? so[1].replace('.','').toUpperCase().trim() + ' ' : 'MV ') + so[2]).trim());
+      }
+    }
+    if (!postFrom){
+      const m = l.match(routeRe);
+      if (m && !l.match(timeRe) && isPlace(m[1]) && isPlace(m[2])){ postFrom = cleanPlace(m[1]); postTo = cleanPlace(m[2]); }
+    }
+  }
+
+  const found = [];
+  const seen = new Set();
+  let curDate = iso(new Date());
+  for (const l of lines){
+    if (/boarding/i.test(l)) continue;
+    if (/\b(ETA|arrival|arrives?|dating)\b/i.test(l)) {
+      const ed = parseDateLine(l);
+      if (ed) curDate = ed;
+      const at = l.match(timeRe);
+      if (at && found.length){
+        let eta;
+        if (at[6]) eta = at[6].slice(0,2) + ':' + at[6].slice(2);
+        else if (at[4]) eta = to24(at[4], at[5], null);
+        else {
+          let ap = at[3];
+          if (/NN/i.test(ap)) eta = '12:00';
+          else if (/MN/i.test(ap)) eta = '00:00';
+          else eta = to24(at[1], at[2], ap);
+        }
+        found[found.length - 1].eta = eta;
+        found[found.length - 1].etaDate = curDate || found[found.length - 1].date;
+      }
+      continue;
+    }
+    const t = l.match(timeRe);
+    if (!t){
+      const d = parseDateLine(l);
+      if (d) curDate = d;
+      continue;
+    }
+    const inlineDate = parseDateLine(l.slice(0, l.indexOf(t[0])));
+    if (inlineDate) curDate = inlineDate;
+    let time;
+    if (t[6]) time = t[6].slice(0,2) + ':' + t[6].slice(2);
+    else if (t[4]) time = to24(t[4], t[5], null);
+    else {
+      let ap = t[3];
+      if (/NN/i.test(ap)) { time = '12:00'; }
+      else if (/MN/i.test(ap)) { time = '00:00'; }
+      else time = to24(t[1], t[2], ap);
+    }
+    let parenNote = '';
+    let lClean = l.replace(/\(([^)]*)\)/g, (_, inner) => {
+      if (inner.trim()) parenNote += (parenNote ? ' · ' : '') + inner.trim().replace(/\s+/g,' ');
+      return ' ';
+    });
+    let rest = lClean.replace(t[0], ' ')
+                .replace(/^\s*(am|pm|a\.m\.|p\.m\.|h)\b/i, ' ')
+                .replace(/\b(etd|departure|dep)\s*:?/ig, ' ')
+                .replace(/\s+/g, ' ').trim();
+    const restForRoute = rest.replace(/\bdue\s+to\b/ig, 'due-to');
+    let vm = l.match(vRe);
+    if (vm){
+      let vname = vm[2];
+      const lower = vname.toLowerCase();
+      let cut = -1;
+      for (const [, aliases] of PORTS)
+        for (const a of aliases){
+          const idx = lower.indexOf(a);
+          if (idx > 0 && (cut === -1 || idx < cut)) cut = idx;
+        }
+      if (cut > 0) vm = [vm[0], vm[1], vname.slice(0, cut).trim()];
+    }
+    const rm = restForRoute.match(routeRe);
+    let from = '', to = '', note = '';
+    if (rm && isPlace(rm[1]) && isPlace(rm[2])){
+      from = cleanPlace(rm[1]); to = cleanPlace(rm[2]);
+      note = parenNote;
+    } else {
+      const ports = portTokens(restForRoute);
+      if (ports.length >= 2 && ports[0] !== ports[1]){
+        from = ports[0]; to = ports[1]; note = parenNote;
+      } else {
+        from = postFrom; to = postTo;
+        const leftover = rest.replace(vRe, '').replace(/\s+/g,' ').trim();
+        note = [parenNote, leftover.length > 3 ? leftover : ''].filter(Boolean).join(' · ');
+      }
+    }
+    const key = curDate + '|' + time + '|' + from.toUpperCase() + '|' + to.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.push({
+      date: curDate,
+      time,
+      vessel: vm ? cleanVessel((vm[1].replace('.','').replace('/','') + ' ' + vm[2]).trim()) : postVessel,
+      from, to, note,
+      cancelled: cancelRe.test(l) || cancelRe.test(text) && lines.length <= 3,
+      src: l
+    });
+  }
+
+  for (const f of found){
+    if (!f.eta){
+      const est = estimateEta(f.date, f.time, f.from, f.to);
+      if (est){ f.eta = est.eta; f.etaDate = est.etaDate; f.etaEst = true; }
+    }
+  }
+
+  const list = document.getElementById('parsedList');
+  if (!found.length){
+    list.innerHTML = '<p style="margin-top:12px;font-size:13px;color:#7FB3C4">No departure times detected. Add the trip manually above instead.</p>';
+    document.getElementById('parsedActions').style.display = 'none';
+    document.getElementById('parsedNotifyRow').style.display = 'none';
+    return;
+  }
+  list.innerHTML = found.map((f,i) => `
+    <div class="parsed-item">
+      <div class="head">
+        <input type="checkbox" id="p-on-${i}" checked>
+        <b>${fmtTime(f.time)}</b>
+        <small style="color:#7FB3C4">${esc(f.src.slice(0,42))}${f.src.length>42?'…':''}</small>
+      </div>
+      <div class="grid">
+        <input id="p-date-${i}" type="date" value="${f.date}">
+        <input id="p-eta-${i}" type="time" value="${f.eta || ''}" title="ETA (arrival)${f.etaEst ? ' — estimated' : ''}">
+        <input type="hidden" id="p-est-${i}" value="${f.etaEst ? '1' : ''}">
+        <input id="p-etadate-${i}" type="date" value="${f.etaDate || f.date}" title="ETA date">
+        <input id="p-time-${i}" type="time" value="${f.time}">
+        <input id="p-vessel-${i}" type="text" placeholder="Vessel" value="${esc(f.vessel)}">
+        <input id="p-from-${i}" type="text" placeholder="From" value="${esc(f.from)}">
+        <input id="p-to-${i}" type="text" placeholder="To" value="${esc(f.to)}">
+        <input class="full" id="p-note-${i}" type="text" placeholder="Note (optional)" value="${esc(f.note || '')}">
+        <label class="full" style="margin:0;display:flex;align-items:center;gap:7px;font-size:13px;color:#F87171">
+          <input type="checkbox" id="p-cx-${i}" ${f.cancelled?'checked':''} style="width:16px;height:16px;accent-color:#F87171">
+          Mark as cancelled
+        </label>
+      </div>
+    </div>`).join('');
+  list.dataset.count = found.length;
+  document.getElementById('parsedActions').style.display = 'flex';
+  document.getElementById('parsedNotifyRow').style.display = 'flex';
+}
+
+function addParsed(){
+  const n = parseInt(document.getElementById('parsedList').dataset.count || 0);
+  let added = 0;
+  const addedList = [];
+  for (let i = 0; i < n; i++){
+    if (!document.getElementById('p-on-' + i).checked) continue;
+    const date = document.getElementById('p-date-' + i).value;
+    let eta = document.getElementById('p-eta-' + i).value;
+    let etaDate = document.getElementById('p-etadate-' + i).value || date;
+    let etaEst = false;
+    const time = document.getElementById('p-time-' + i).value;
+    const vessel = document.getElementById('p-vessel-' + i).value.trim();
+    const from = document.getElementById('p-from-' + i).value.trim();
+    const to = document.getElementById('p-to-' + i).value.trim();
+    etaEst = !!(document.getElementById('p-est-' + i) && document.getElementById('p-est-' + i).value);
+    if (!eta){
+      const est = estimateEta(date, time, from, to);
+      if (est){ eta = est.eta; etaDate = est.etaDate; etaEst = true; }
+    }
+    if (!date || !time || !vessel || !from || !to) continue;
+    const note = document.getElementById('p-note-' + i).value.trim();
+    trips.push({
+      id: 't' + Date.now() + '_' + i, date, time, vessel, from, to, note, eta, etaDate, etaEst,
+      status: document.getElementById('p-cx-' + i).checked ? 'cancelled' : 'ontime'
+    });
+    addedList.push(`${vessel} ${from}→${to} ${fmtDateShort(date)} ${fmtTime(time)}`);
+    added++;
+  }
+  saveBoard();
+  if (added && document.getElementById('a-parsed-notify').checked){
+    const msg = added === 1
+      ? `New trip: ${addedList[0]}`
+      : `${added} new trips added: ` + addedList.join('; ');
+    pushMessage(msg);
+  }
+  document.getElementById('p-paste').value = '';
+  document.getElementById('parsedList').innerHTML = '';
+  document.getElementById('parsedActions').style.display = 'none';
+  document.getElementById('parsedNotifyRow').style.display = 'none';
+  document.getElementById('a-parsed-notify').checked = false;
+  showToast(added + ' trip(s) added ✓');
+}
+
+function applyParsedAdvisory(){
+  const text = document.getElementById('parsedAdvFull').value.trim();
+  if (!text) return;
+  document.getElementById('a-notice').value = text;
+  saveNotice();
+  document.getElementById('parsedAdvisory').style.display = 'none';
 }
 
 /* ============ TOAST ============ */
