@@ -73,6 +73,14 @@
 </div>
 
 <script>
+  if (new URLSearchParams(location.search).get('embed') === '1') {
+    document.addEventListener('DOMContentLoaded', () => {
+      const header = document.querySelector('header');
+      if (header) header.style.display = 'none';
+    });
+  }
+</script>
+<script>
   function checkOnlineState(){
     const frame = document.getElementById('wxFrame');
     const msg = document.getElementById('offlineMsg');
